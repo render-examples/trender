@@ -94,7 +94,7 @@ trender/
 
 ### Prerequisites
 
-- GitHub Personal Access Token with `repo` read permissions
+- GitHub App with client ID and client secret
 - Render account
 - Node.js 18+ (for dashboard)
 - Python 3.11+ (for workflows)
@@ -114,7 +114,8 @@ cp .env.example .env
 ```
 
 Required variables:
-- `GITHUB_TOKEN`: Your GitHub personal access token
+- `GITHUB_CLIENT_ID`: Your GitHub App client ID
+- `GITHUB_CLIENT_SECRET`: Your GitHub App client secret
 - `DATABASE_URL`: PostgreSQL connection string
 - `RENDER_WORKFLOW_ID`: Workflow ID (after deployment)
 - `RENDER_API_KEY`: Render API key
@@ -152,7 +153,8 @@ render-workflows deploy workflow.py
 ```
 
 Set environment variables in Render Workflows dashboard:
-- `GITHUB_TOKEN`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
 - `DATABASE_URL`
 
 ### 6. Deploy Services via render.yaml

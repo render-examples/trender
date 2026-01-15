@@ -503,7 +503,8 @@ class GitHubAPIClient:
 
 ```bash
 # GitHub API
-GITHUB_TOKEN=ghp_your_personal_access_token_here
+GITHUB_CLIENT_ID=Iv1.your_github_app_client_id_here
+GITHUB_CLIENT_SECRET=your_github_app_client_secret_here
 GITHUB_API_BASE_URL=https://api.github.com
 
 # Database
@@ -899,7 +900,10 @@ async def store_execution_stats(duration: float, repos_count: int, db_pool) -> N
 ```python
 async def init_connections():
     """Initialize shared GitHub API client and database pool."""
-    github_api = GitHubAPIClient(token=os.getenv('GITHUB_TOKEN'))
+    github_api = GitHubAPIClient(
+        client_id=os.getenv('GITHUB_CLIENT_ID'),
+        client_secret=os.getenv('GITHUB_CLIENT_SECRET')
+    )
     db_pool = await asyncpg.create_pool(os.getenv('DATABASE_URL'))
     return github_api, db_pool
 
@@ -1429,7 +1433,10 @@ from github_api import GitHubAPIClient
 
 async def init_connections():
     """Initialize shared GitHub API client and database pool."""
-    github_api = GitHubAPIClient(token=os.getenv('GITHUB_TOKEN'))
+    github_api = GitHubAPIClient(
+        client_id=os.getenv('GITHUB_CLIENT_ID'),
+        client_secret=os.getenv('GITHUB_CLIENT_SECRET')
+    )
     db_pool = await asyncpg.create_pool(
         os.getenv('DATABASE_URL'),
         min_size=5,
@@ -1467,7 +1474,7 @@ python-dotenv>=1.0.0
    - Install Render Workflows SDK: `pip install render-sdk`
    - Deploy workflow: `render-workflows deploy workflow.py`
    - Set entry point as `main_analysis_task`
-   - Configure environment variables (GITHUB_TOKEN, DATABASE_URL)
+   - Configure environment variables (GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, DATABASE_URL)
    - Note the WORKFLOW_ID for trigger service
 
 4. **Create Render Cron Job with trigger.py**

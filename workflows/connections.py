@@ -15,12 +15,14 @@ async def init_connections():
     Returns:
         Tuple of (GitHubAPIClient, asyncpg.Pool)
     """
-    # Initialize GitHub API client
-    github_token = os.getenv('GITHUB_TOKEN')
-    if not github_token:
-        raise ValueError("GITHUB_TOKEN environment variable is required")
+    # Initialize GitHub API client with App credentials
+    github_client_id = os.getenv('GITHUB_CLIENT_ID')
+    github_client_secret = os.getenv('GITHUB_CLIENT_SECRET')
+    
+    if not github_client_id or not github_client_secret:
+        raise ValueError("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables are required")
 
-    github_api = GitHubAPIClient(token=github_token)
+    github_api = GitHubAPIClient(client_id=github_client_id, client_secret=github_client_secret)
     await github_api.__aenter__()
 
     # Initialize database connection pool

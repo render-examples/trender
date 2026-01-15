@@ -1,3 +1,6 @@
+# Render Workflows SDK
+render-sdk>=0.1.0
+
 # Database
 asyncpg>=0.29.0
 
