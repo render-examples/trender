@@ -1,0 +1,35 @@
+services:
+  # Next.js Dashboard - Web Service
+  - type: web
+    name: trender-dashboard
+    runtime: node
+    buildCommand: cd dashboard && npm install && npm run build
+    startCommand: cd dashboard && npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trender-db
+          property: connectionString
+      - key: NEXT_PUBLIC_API_URL
+        value: https://trender-dashboard.onrender.com
+      - key: NODE_ENV
+        value: production
+
+  # Cron Job - Hourly Analysis Trigger
+  - type: cron
+    name: trender-analyzer-cron
+    runtime: python
+    schedule: "0 * * * *"
+    buildCommand: cd trigger && pip install -r requirements.txt
+    startCommand: cd trigger && python trigger.py
+    envVars:
+      - key: RENDER_WORKFLOW_SLUG
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+
+# PostgreSQL Database
+databases:
+  - name: trender-db
+    databaseName: trender
+    plan: standard

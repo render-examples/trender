@@ -1,0 +1,17 @@
+# Render Workflows SDK
+render-sdk>=1.0.0
+
+# Database
+asyncpg>=0.29.0
+
+# HTTP Client
+aiohttp>=3.9.0
+
+# YAML parsing for render.yaml
+PyYAML>=6.0.1
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Timezone support
+pytz>=2024.1
