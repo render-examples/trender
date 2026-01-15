@@ -3,7 +3,7 @@ Trender Main Workflow
 Orchestrates the GitHub trending analytics pipeline using Render Workflows.
 """
 
-from render_sdk.workflows import task
+from render_sdk.workflows import task, start
 import asyncio
 import asyncpg
 import os
@@ -428,3 +428,9 @@ async def store_execution_stats(duration: float, repos_count: int,
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         """, datetime.utcnow(), duration, repos_count, 9, 9,
             parallel_speedup, TARGET_LANGUAGES, 1.0)
+
+
+if __name__ == "__main__":
+    # Start the Render Workflows task server
+    # This registers all @task decorated functions and begins listening for task execution requests
+    start()

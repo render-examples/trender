@@ -11,7 +11,7 @@ from render_sdk.client import Client
 
 async def trigger_workflow():
     """Trigger the main analysis workflow via Render Workflows SDK."""
-    workflow_slug = os.getenv('RENDER_WORKFLOW_SLUG', 'trender-workflow')
+    workflow_slug = os.getenv('RENDER_WORKFLOW_SLUG', 'trender')
     
     # Verify RENDER_API_KEY is set (Client uses it automatically)
     if not os.getenv('RENDER_API_KEY'):
