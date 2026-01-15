@@ -13,23 +13,20 @@ A batch analytics platform with a **3-layer data engineering pipeline** (Raw →
 
 ## Architecture
 
-```
-Cron (Hourly) → Workflow Orchestrator
-                    ↓
-        ┌───────────┴───────────┐
-        ↓           ↓           ↓
-    Python      TypeScript     Go
-    Analyzer    Analyzer    Analyzer → Render Ecosystem
-        ↓           ↓           ↓           ↓
-        └───────────┴───────────┴───────────┘
-                    ↓
-            Raw Layer (JSONB)
-                    ↓
-        Staging Layer (Validated)
-                    ↓
-        Analytics Layer (Fact/Dim)
-                    ↓
-            Next.js Dashboard
+```mermaid
+graph TD
+    A[Cron Job Hourly] --> B[Workflow Orchestrator]
+    B --> C[Python Analyzer]
+    B --> D[TypeScript Analyzer]
+    B --> E[Go Analyzer]
+    B --> F[Render Ecosystem]
+    C --> G[Raw Layer JSONB]
+    D --> G
+    E --> G
+    F --> G
+    G --> H[Staging Layer Validated]
+    H --> I[Analytics Layer Fact/Dim]
+    I --> J[Next.js Dashboard]
 ```
 
 ## Tech Stack
