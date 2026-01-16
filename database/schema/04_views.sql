@@ -21,7 +21,8 @@ SELECT
   fs.commits_last_7_days,
   fs.issues_closed_last_7_days,
   fs.active_contributors,
-  fs.snapshot_date
+  fs.snapshot_date,
+  fs.snapshot_date as last_updated
 FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 WHERE dr.is_current = TRUE

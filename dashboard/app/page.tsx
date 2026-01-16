@@ -5,6 +5,7 @@ import {
   getRenderShowcase,
   getDashboardStats,
 } from '@/lib/db'
+import Filters from '@/components/Filters'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,42 +108,7 @@ export default async function Home({
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mr-2">
-              Language:
-            </label>
-            <select
-              className="border border-gray-300 rounded px-3 py-1"
-              value={selectedLanguage || 'all'}
-              onChange={(e) => {
-                const lang = e.target.value === 'all' ? '' : e.target.value
-                window.location.href = `/?${lang ? `language=${lang}` : ''}${renderOnly ? '&render=true' : ''}`
-              }}
-            >
-              <option value="all">All Languages</option>
-              <option value="Python">Python</option>
-              <option value="TypeScript">TypeScript</option>
-              <option value="Go">Go</option>
-            </select>
-          </div>
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={renderOnly}
-              onChange={(e) => {
-                const checked = e.target.checked
-                window.location.href = `/?${selectedLanguage ? `language=${selectedLanguage}` : ''}${checked ? '&render=true' : ''}`
-              }}
-              className="mr-2"
-            />
-            <span className="text-sm font-medium text-gray-700">
-              Show only Render projects
-            </span>
-          </label>
-        </div>
-      </div>
+      <Filters selectedLanguage={selectedLanguage} renderOnly={renderOnly} />
 
       {/* Repositories Grid */}
       <div className="grid gap-4">

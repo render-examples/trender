@@ -125,16 +125,59 @@ Required variables:
 
 ### 4. Initialize Database Schema
 
+#### Option 1: Using the init.sql script (Recommended)
+
 ```bash
-# Connect to your Render PostgreSQL instance
+# Connect to your Render PostgreSQL instance and run the initialization script
+
+DATABASE_URL=YOUR_DATABASE_URL
 psql $DATABASE_URL -f database/init.sql
 ```
 
-This will create:
-- Raw layer tables (`raw_github_repos`, `raw_repo_metrics`)
-- Staging layer tables (`stg_repos_validated`, `stg_render_enrichment`)
-- Analytics layer tables (dimensions and facts)
-- Analytics views for dashboard queries
+#### Option 2: Run schema files individually
+
+If you prefer to run the schema files one at a time:
+
+```bash
+# Run each schema file in order
+psql $DATABASE_URL -f database/schema/01_raw_layer.sql
+psql $DATABASE_URL -f database/schema/02_staging_layer.sql
+psql $DATABASE_URL -f database/schema/03_analytics_layer.sql
+psql $DATABASE_URL -f database/schema/04_views.sql
+```
+
+#### What gets created:
+
+**Raw Layer:**
+- `raw_github_repos`: Stores complete GitHub API responses
+- `raw_repo_metrics`: Stores repository metrics (stars, forks, issues)
+
+**Staging Layer:**
+- `stg_repos_validated`: Cleaned and validated repository data
+- `stg_render_enrichment`: Render-specific metadata and detection
+
+**Analytics Layer:**
+- Dimension tables: `dim_repositories`, `dim_languages`, `dim_render_services`
+- Fact tables: `fact_repo_snapshots`, `fact_render_usage`, `fact_workflow_executions`
+
+**Views:**
+- Pre-aggregated analytics views for dashboard queries
+
+#### Verify Database Initialization
+
+Check that all tables were created successfully:
+
+```bash
+psql $DATABASE_URL -c "\dt"
+```
+
+You should see 12+ tables across the raw, stg, dim, and fact prefixes.
+
+#### Troubleshooting
+
+- **Connection refused**: Ensure your `DATABASE_URL` is correct and the Render PostgreSQL instance is active
+- **Permission denied**: Make sure you're using the connection string with full admin privileges
+- **Tables already exist**: Drop the database and recreate it, or use `DROP TABLE IF EXISTS` statements
 
 ### 5. Deploy Render Workflows
 
