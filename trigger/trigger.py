@@ -5,7 +5,7 @@ Triggers the main analysis workflow via Render Workflows SDK.
 
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 from render_sdk.client import Client
@@ -39,7 +39,7 @@ async def trigger_workflow():
             input_data=[]  # main_analysis_task takes no arguments
         )
 
-        print(f"✓ Workflow triggered successfully at {datetime.now(datetime.UTC)}")
+        print(f"✓ Workflow triggered successfully at {datetime.now(timezone.utc)}")
         print(f"  Task Run ID: {started_run.id}")
         print(f"  Initial Status: {started_run.status}")
         
