@@ -17,7 +17,7 @@ services:
 
   # Workflow - Main Analytics Pipeline
   - type: workflow
-    name: trender-workflow
+    name: trender-wf
     runtime: python
     rootDir: workflows
     buildCommand: pip install -r requirements.txt

@@ -6,12 +6,18 @@ Triggers the main analysis workflow via Render Workflows SDK.
 import asyncio
 import os
 from datetime import datetime
+from pathlib import Path
+from dotenv import load_dotenv
 from render_sdk.client import Client
+
+# Load .env file from parent directory
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 
 async def trigger_workflow():
     """Trigger the main analysis workflow via Render Workflows SDK."""
-    workflow_slug = os.getenv('RENDER_WORKFLOW_SLUG', 'trender')
+    workflow_slug = os.getenv('RENDER_WORKFLOW_SLUG', 'trender-wf')
     
     # Verify RENDER_API_KEY is set (Client uses it automatically)
     if not os.getenv('RENDER_API_KEY'):

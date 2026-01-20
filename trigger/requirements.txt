@@ -1,3 +1,6 @@
+# Render SDK for workflow triggering
+render-sdk>=0.1.0
+
 # HTTP Client for async requests
 aiohttp>=3.9.0
 
