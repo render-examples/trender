@@ -29,8 +29,9 @@ async def trigger_workflow():
         client = Client()
 
         # Kick off the main analysis task
-        # Task identifier format: {workflow-slug}/{task-name}
-        task_identifier = f"{workflow_slug}/main-analysis-task"
+        # Task identifier format: {workflow-slug}/{task_name}
+        # Note: task name must match the Python function name exactly (underscores)
+        task_identifier = f"{workflow_slug}/main_analysis_task"
         
         print(f"Triggering task: {task_identifier}")
         started_run = await client.workflows.run_task(
@@ -38,7 +39,7 @@ async def trigger_workflow():
             input_data=[]  # main_analysis_task takes no arguments
         )
 
-        print(f"✓ Workflow triggered successfully at {datetime.utcnow()}")
+        print(f"✓ Workflow triggered successfully at {datetime.now(datetime.UTC)}")
         print(f"  Task Run ID: {started_run.id}")
         print(f"  Initial Status: {started_run.status}")
         
