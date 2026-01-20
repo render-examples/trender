@@ -11,45 +11,27 @@ from typing import Dict, List, Optional
 
 
 class GitHubAPIClient:
-    """Async GitHub API client with rate limiting and retry logic."""
+    """Async GitHub API client with OAuth token authentication."""
 
-    def __init__(self, client_id: str, client_secret: str):
-        self.client_id = client_id
-        self.client_secret = client_secret
+    def __init__(self, access_token: str):
+        """
+        Initialize GitHub API client with a GitHub OAuth access token.
+        
+        Args:
+            access_token: GitHub OAuth access token (obtained via oauth_setup.py)
+        """
+        self.access_token = access_token
         self.base_url = "https://api.github.com"
         self.session: Optional[aiohttp.ClientSession] = None
         self.rate_limit_remaining = 5000
         self.rate_limit_reset = None
-        self.access_token = None
 
     async def __aenter__(self):
-        # Get access token using client credentials
-        await self._get_access_token()
-        
         self.session = aiohttp.ClientSession(headers={
-            'Authorization': f'Bearer {self.access_token}',
+            'Authorization': f'token {self.access_token}',
             'Accept': 'application/vnd.github.v3+json'
         })
         return self
-    
-    async def _get_access_token(self):
-        """Get access token using GitHub App client credentials."""
-        async with aiohttp.ClientSession() as temp_session:
-            url = "https://github.com/login/oauth/access_token"
-            data = {
-                'client_id': self.client_id,
-                'client_secret': self.client_secret,
-                'grant_type': 'client_credentials'
-            }
-            headers = {
-                'Accept': 'application/json'
-            }
-            async with temp_session.post(url, json=data, headers=headers) as response:
-                response.raise_for_status()
-                result = await response.json()
-                self.access_token = result.get('access_token')
-                if not self.access_token:
-                    raise ValueError("Failed to obtain access token from GitHub App")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()

@@ -26,11 +26,7 @@ services:
         fromDatabase:
           name: trender-db
           property: connectionString
-      - key: GITHUB_TOKEN
-        sync: false
-      - key: GITHUB_CLIENT_ID
-        sync: false
-      - key: GITHUB_CLIENT_SECRET
+      - key: GITHUB_ACCESS_TOKEN
         sync: false
 
   # Cron Job - Hourly Analysis Trigger
