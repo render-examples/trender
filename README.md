@@ -97,14 +97,14 @@ cd trigger
 
 # Set environment variables
 export RENDER_API_KEY=your_api_key
-export RENDER_WORKFLOW_SLUG=trender
+export RENDER_WORKFLOW_SLUG=trender-wf
 
 # Install dependencies and run
 pip install -r requirements.txt
 python trigger.py
 ```
 
-Or use the Render Dashboard: **Workflows** → **trender** → **Trigger Workflow** → **main-analysis-task**
+Or use the Render Dashboard: **Workflows** → **trender-wf** → **Tasks** → **main_analysis_task** → **Run Task**
 
 ---
 
@@ -112,7 +112,7 @@ Or use the Render Dashboard: **Workflows** → **trender** → **Trigger Workflo
 
 ### Prerequisites
 
-- GitHub App with client ID and client secret
+- GitHub OAuth App (we'll create this in step 2)
 - Render account
 - Node.js 18+ (for dashboard)
 - Python 3.11+ (for workflows)
@@ -124,27 +124,98 @@ git clone <your-repo-url>
 cd trender
 ```
 
-### 2. Set Up Environment Variables
+### 2. Create GitHub OAuth App
+
+1. Go to https://github.com/settings/developers
+2. Click **"New OAuth App"**
+3. Fill in the details:
+   - **Application name**: `Trender Analytics` (or your choice)
+   - **Homepage URL**: Your repository URL or `http://localhost:3000`
+   - **Authorization callback URL**: `http://localhost:8000/callback`
+4. Click **"Register application"**
+5. Note your **Client ID**
+6. Click **"Generate a new client secret"** and save it securely
+
+**Important:** The callback URL `http://localhost:8000/callback` is required for the one-time setup script in step 4.
+
+### 3. Set Up Environment Variables
 
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
 ```
 
-Required variables:
-- `GITHUB_CLIENT_ID`: Your GitHub App client ID
-- `GITHUB_CLIENT_SECRET`: Your GitHub App client secret
-- `DATABASE_URL`: PostgreSQL connection string
-- `RENDER_WORKFLOW_ID`: Workflow ID (after deployment)
-- `RENDER_API_KEY`: Render API key
+Add your GitHub OAuth credentials to `.env`:
+```bash
+GITHUB_CLIENT_ID=Iv1.your_client_id_here
+GITHUB_CLIENT_SECRET=your_client_secret_here
+```
 
-### 3. Create PostgreSQL Database on Render
+Other required variables (add later):
+- `GITHUB_ACCESS_TOKEN`: Generated in step 4
+- `DATABASE_URL`: PostgreSQL connection string (from step 5)
+- `RENDER_API_KEY`: Render API key (from https://dashboard.render.com/u/settings#api-keys)
+- `RENDER_WORKFLOW_SLUG`: `trender-wf` (or your workflow slug)
+
+### 4. Generate GitHub Access Token (One-Time Setup)
+
+This step generates a long-lived access token that your workflow will use to call the GitHub API. You only need to do this once.
+
+**Run the OAuth setup script:**
+
+```bash
+cd workflows
+pip install -r requirements.txt
+python oauth_setup.py
+```
+
+**What happens:**
+1. A local server starts on port 8000
+2. Your browser opens to GitHub's authorization page
+3. Click **"Authorize"** to approve the app
+4. You'll be redirected back to `http://localhost:8000/callback`
+5. The script displays your `GITHUB_ACCESS_TOKEN`
+
+**Example output:**
+```
+=== GitHub OAuth App Setup ===
+
+1. Starting local callback server on port 8000...
+2. Opening browser for authorization...
+3. Waiting for authorization callback...
+4. Authorization code received!
+5. Exchanging code for access token...
+
+============================================================
+✓ SUCCESS! Your GitHub OAuth access token:
+============================================================
+
+ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+============================================================
+Add this to your .env file and Render Dashboard:
+GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+============================================================
+```
+
+**Copy the token** and add it to your `.env` file:
+```bash
+GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**Important Notes:**
+- This token doesn't expire and only needs to be generated once
+- Store it securely - never commit it to version control
+- The token has `repo` and `read:org` scopes for accessing GitHub data
+- You'll add this same token to Render's environment variables in step 8
+
+### 5. Create PostgreSQL Database on Render
 
 1. Go to Render Dashboard
 2. Create new PostgreSQL database named `trender`
 3. Note the connection string for `DATABASE_URL`
 
-### 4. Initialize Database Schema
+### 6. Initialize Database Schema
 
 #### Option 1: Using the init.sql script (Recommended)
 
@@ -200,25 +271,7 @@ You should see 12+ tables across the raw, stg, dim, and fact prefixes.
 - **Permission denied**: Make sure you're using the connection string with full admin privileges
 - **Tables already exist**: Drop the database and recreate it, or use `DROP TABLE IF EXISTS` statements
 
-### 5. Deploy Render Workflows
-
-```bash
-# Install Render Workflows SDK
-pip install render-sdk
-
-# Deploy workflow
-cd workflows
-render-workflows deploy workflow.py
-
-# Note the WORKFLOW_ID from the output
-```
-
-Set environment variables in Render Workflows dashboard:
-- `GITHUB_CLIENT_ID`
-- `GITHUB_CLIENT_SECRET`
-- `DATABASE_URL`
-
-### 6. Deploy Services via render.yaml
+### 7. Deploy Services via render.yaml
 
 The `render.yaml` file defines:
 - **Web Service**: Next.js dashboard
@@ -231,13 +284,21 @@ Deploy to Render:
 # Or use Render Blueprint button
 ```
 
-### 7. Configure Cron Job
+### 8. Configure Environment Variables in Render
 
-After deploying, update the cron job environment variables:
-- `RENDER_WORKFLOW_ID`: Your workflow ID from step 5
-- `RENDER_API_KEY`: Your Render API key
+After deploying via `render.yaml`, add the following environment variables to your **workflow service** (`trender-wf`) in the Render Dashboard:
 
-### 8. Trigger Workflow Runs
+1. Go to your `trender-wf` workflow
+2. Navigate to **Environment** tab
+3. Add:
+   - `GITHUB_ACCESS_TOKEN`: The token from step 4
+   - `DATABASE_URL`: Automatically connected from the database
+
+**Important:** After adding these variables, trigger a manual deploy:
+- Click **"Manual Deploy"** → **"Clear build cache & deploy"**
+- This ensures the environment variables are available to your workflow tasks
+
+### 9. Trigger Workflow Runs
 
 There are three ways to trigger a workflow run to populate data:
 
@@ -312,7 +373,7 @@ Expected workflow completion time: **8-15 seconds** for ~300 repositories
 - **"Connection refused"**: Check that `DATABASE_URL` is correct and the database is running
 - **Workflow fails**: Check the Render dashboard logs for detailed error messages
 
-### 9. Access Dashboard
+### 10. Access Dashboard
 
 Once the workflow completes, access your dashboard at:
 ```
