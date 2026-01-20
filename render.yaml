@@ -46,4 +46,4 @@ services:
 databases:
   - name: trender-db
     databaseName: trender
-    plan: standard
+    plan: basic_256mb

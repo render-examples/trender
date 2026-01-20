@@ -87,6 +87,27 @@ trender/
 └── README.md
 ```
 
+## Quick Start - Trigger a Workflow
+
+If you've already completed the setup and just want to trigger a workflow run:
+
+```bash
+# Navigate to trigger directory
+cd trigger
+
+# Set environment variables
+export RENDER_API_KEY=your_api_key
+export RENDER_WORKFLOW_SLUG=trender
+
+# Install dependencies and run
+pip install -r requirements.txt
+python trigger.py
+```
+
+Or use the Render Dashboard: **Workflows** → **trender** → **Trigger Workflow** → **main-analysis-task**
+
+---
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -216,16 +237,80 @@ After deploying, update the cron job environment variables:
 - `RENDER_WORKFLOW_ID`: Your workflow ID from step 5
 - `RENDER_API_KEY`: Your Render API key
 
-### 8. Trigger First Workflow Run
+### 8. Trigger Workflow Runs
+
+There are three ways to trigger a workflow run to populate data:
+
+#### Method 1: Using the Trigger Script (Recommended)
+
+The `trigger/trigger.py` script uses the Render SDK to trigger workflows programmatically:
 
 ```bash
-# Manual trigger via Render Workflows CLI
-render-workflows trigger <WORKFLOW_ID>
-
-# Or trigger via API
 cd trigger
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set required environment variables
+export RENDER_API_KEY=your_render_api_key
+export RENDER_WORKFLOW_SLUG=trender  # Your workflow slug from Render dashboard
+
+# Run the trigger script
 python trigger.py
 ```
+
+Expected output:
+```
+Triggering task: trender/main-analysis-task
+✓ Workflow triggered successfully at 2026-01-20 12:00:00
+  Task Run ID: run_abc123xyz
+  Initial Status: running
+```
+
+#### Method 2: Using the Render Dashboard
+
+1. Go to [Render Dashboard](https://dashboard.render.com)
+2. Navigate to **Workflows** section
+3. Select your `trender` workflow
+4. Click **"Trigger Workflow"** button
+5. Select the `main-analysis-task` task
+6. Click **"Run Task"**
+
+#### Method 3: Using Render CLI
+
+If you have the Render CLI installed:
+
+```bash
+# Install Render CLI (if not already installed)
+npm install -g @render-inc/cli
+
+# Login to Render
+render login
+
+# Trigger the workflow
+render workflows trigger trender main-analysis-task
+```
+
+#### Verify Workflow Execution
+
+Check the workflow status:
+
+1. **Via Dashboard**: Go to Workflows → trender → View recent runs
+2. **Via Script**: The trigger script outputs the Task Run ID
+3. **Via Database**: Query the `fact_workflow_executions` table:
+
+```bash
+psql $DATABASE_URL -c "SELECT * FROM fact_workflow_executions ORDER BY execution_date DESC LIMIT 1;"
+```
+
+Expected workflow completion time: **8-15 seconds** for ~300 repositories
+
+#### Troubleshooting
+
+- **"RENDER_API_KEY not set"**: Export your API key from [Render Settings](https://dashboard.render.com/u/settings#api-keys)
+- **"Task not found"**: Verify your workflow slug and that the workflow is deployed
+- **"Connection refused"**: Check that `DATABASE_URL` is correct and the database is running
+- **Workflow fails**: Check the Render dashboard logs for detailed error messages
 
 ### 9. Access Dashboard
 
@@ -233,6 +318,12 @@ Once the workflow completes, access your dashboard at:
 ```
 https://trender-dashboard.onrender.com
 ```
+
+You should see:
+- Top trending repositories across Python, TypeScript, and Go
+- Render ecosystem projects
+- Momentum scores and analytics
+- Historical trends
 
 ## Data Pipeline Layers
 
