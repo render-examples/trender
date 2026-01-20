@@ -124,7 +124,11 @@ git clone <your-repo-url>
 cd trender
 ```
 
-### 2. Create GitHub OAuth App
+### 2. One-Time GitHub OAuth Setup
+
+This is a **one-time setup** that creates a long-lived GitHub access token for the workflow to use. You'll need to complete this before deploying to Render.
+
+#### Step 2.1: Create GitHub OAuth App
 
 1. Go to https://github.com/settings/developers
 2. Click **"New OAuth App"**
@@ -133,35 +137,26 @@ cd trender
    - **Homepage URL**: Your repository URL or `http://localhost:3000`
    - **Authorization callback URL**: `http://localhost:8000/callback`
 4. Click **"Register application"**
-5. Note your **Client ID**
+5. Note your **Client ID** (starts with `Iv1.`)
 6. Click **"Generate a new client secret"** and save it securely
 
-**Important:** The callback URL `http://localhost:8000/callback` is required for the one-time setup script in step 4.
+**Important Notes:**
+- The callback URL `http://localhost:8000/callback` is required for the authorization flow
+- Keep your Client Secret secure - you'll need it for the next step
+- This OAuth app allows Trender to access GitHub's API on your behalf
 
-### 3. Set Up Environment Variables
-
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-```
+#### Step 2.2: Add OAuth Credentials to .env
 
 Add your GitHub OAuth credentials to `.env`:
+
 ```bash
 GITHUB_CLIENT_ID=Iv1.your_client_id_here
 GITHUB_CLIENT_SECRET=your_client_secret_here
 ```
 
-Other required variables (add later):
-- `GITHUB_ACCESS_TOKEN`: Generated in step 4
-- `DATABASE_URL`: PostgreSQL connection string (from step 5)
-- `RENDER_API_KEY`: Render API key (from https://dashboard.render.com/u/settings#api-keys)
-- `RENDER_WORKFLOW_SLUG`: `trender-wf` (or your workflow slug)
+#### Step 2.3: Generate Access Token
 
-### 4. Generate GitHub Access Token (One-Time Setup)
-
-This step generates a long-lived access token that your workflow will use to call the GitHub API. You only need to do this once.
-
-**Run the OAuth setup script:**
+Run the OAuth setup script to generate your access token:
 
 ```bash
 cd workflows
@@ -169,12 +164,16 @@ pip install -r requirements.txt
 python oauth_setup.py
 ```
 
-**What happens:**
-1. A local server starts on port 8000
-2. Your browser opens to GitHub's authorization page
-3. Click **"Authorize"** to approve the app
-4. You'll be redirected back to `http://localhost:8000/callback`
-5. The script displays your `GITHUB_ACCESS_TOKEN`
+**What happens during authorization:**
+1. A local server starts on `http://localhost:8000`
+2. Your browser automatically opens to GitHub's authorization page
+3. Review the requested permissions:
+   - **`repo`**: Read repository data (stars, forks, commits)
+   - **`read:org`**: Read organization membership (for Render ecosystem detection)
+4. Click **"Authorize"** to approve the application
+5. You'll be redirected to `http://localhost:8000/callback`
+6. The script exchanges the authorization code for an access token
+7. Your access token is displayed in the terminal
 
 **Example output:**
 ```
@@ -198,24 +197,76 @@ GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ============================================================
 ```
 
-**Copy the token** and add it to your `.env` file:
+#### Step 2.4: Save Your Access Token
+
+1. **Copy the token** from the terminal output
+2. Add it to your `.env` file:
+   ```bash
+   GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+3. **Store it securely** - you'll need to add this to Render's environment variables later (step 8)
+
+**Security Best Practices:**
+- ✅ This token does **not expire** - you only generate it once
+- ✅ Never commit the token to version control (`.env` is in `.gitignore`)
+- ✅ The token has limited scopes (`repo` and `read:org` only)
+- ✅ You can revoke access anytime at https://github.com/settings/applications
+- ⚠️  Treat this token like a password
+
+#### Troubleshooting OAuth Setup
+
+**Problem: Browser doesn't open automatically**
+- Manually navigate to the URL shown in the terminal
+- The URL will look like: `https://github.com/login/oauth/authorize?client_id=...`
+
+**Problem: Port 8000 is already in use**
 ```bash
+# Find and kill the process using port 8000
+lsof -ti:8000 | xargs kill -9
+# Then run oauth_setup.py again
+```
+
+**Problem: "Bad verification code" error**
+- The authorization code can only be used once
+- Run `python oauth_setup.py` again to get a new code
+- Complete the authorization within 10 minutes
+
+**Problem: Need to regenerate token**
+- Go to https://github.com/settings/tokens
+- Find and revoke the old token
+- Run `python oauth_setup.py` again to generate a new one
+
+**Problem: "Access denied" when authorizing**
+- Ensure you have admin access to your GitHub account
+- Try signing out of GitHub and back in
+- Clear your browser cookies for github.com
+
+### 3. Set Up Environment Variables
+
+```bash
+cp .env.example .env
+# Edit .env with your credentials
+```
+
+Your `.env` file should now contain (from step 2):
+```bash
+GITHUB_CLIENT_ID=Iv1.your_client_id_here
+GITHUB_CLIENT_SECRET=your_client_secret_here
 GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-**Important Notes:**
-- This token doesn't expire and only needs to be generated once
-- Store it securely - never commit it to version control
-- The token has `repo` and `read:org` scopes for accessing GitHub data
-- You'll add this same token to Render's environment variables in step 8
+Other required variables (add as you complete the setup):
+- `DATABASE_URL`: PostgreSQL connection string (from step 4)
+- `RENDER_API_KEY`: Render API key (from https://dashboard.render.com/u/settings#api-keys)
+- `RENDER_WORKFLOW_SLUG`: `trender-wf` (or your workflow slug from step 6)
 
-### 5. Create PostgreSQL Database on Render
+### 4. Create PostgreSQL Database on Render
 
 1. Go to Render Dashboard
 2. Create new PostgreSQL database named `trender`
 3. Note the connection string for `DATABASE_URL`
 
-### 6. Initialize Database Schema
+### 5. Initialize Database Schema
 
 #### Option 1: Using the init.sql script (Recommended)
 
@@ -271,7 +322,7 @@ You should see 12+ tables across the raw, stg, dim, and fact prefixes.
 - **Permission denied**: Make sure you're using the connection string with full admin privileges
 - **Tables already exist**: Drop the database and recreate it, or use `DROP TABLE IF EXISTS` statements
 
-### 7. Deploy Services via render.yaml
+### 6. Deploy Services via render.yaml
 
 The `render.yaml` file defines:
 - **Web Service**: Next.js dashboard
@@ -284,21 +335,21 @@ Deploy to Render:
 # Or use Render Blueprint button
 ```
 
-### 8. Configure Environment Variables in Render
+### 7. Configure Environment Variables in Render
 
 After deploying via `render.yaml`, add the following environment variables to your **workflow service** (`trender-wf`) in the Render Dashboard:
 
 1. Go to your `trender-wf` workflow
 2. Navigate to **Environment** tab
 3. Add:
-   - `GITHUB_ACCESS_TOKEN`: The token from step 4
+   - `GITHUB_ACCESS_TOKEN`: The token from step 2
    - `DATABASE_URL`: Automatically connected from the database
 
 **Important:** After adding these variables, trigger a manual deploy:
 - Click **"Manual Deploy"** → **"Clear build cache & deploy"**
 - This ensures the environment variables are available to your workflow tasks
 
-### 9. Trigger Workflow Runs
+### 8. Trigger Workflow Runs
 
 There are three ways to trigger a workflow run to populate data:
 
@@ -373,7 +424,7 @@ Expected workflow completion time: **8-15 seconds** for ~300 repositories
 - **"Connection refused"**: Check that `DATABASE_URL` is correct and the database is running
 - **Workflow fails**: Check the Render dashboard logs for detailed error messages
 
-### 10. Access Dashboard
+### 9. Access Dashboard
 
 Once the workflow completes, access your dashboard at:
 ```
