@@ -11,6 +11,7 @@ interface ScrollableRowProps {
 }
 
 // Generate placeholder repos with lorem ipsum
+// Uses deterministic values to avoid hydration mismatches
 const generatePlaceholderRepos = (count: number, language: string): Repository[] => {
   const loremTexts = [
     'A modern framework for building scalable applications with best practices',
@@ -25,12 +26,16 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
     'Developer-friendly tools for rapid application prototyping',
   ]
   
+  // Use a fixed date to avoid hydration mismatches
+  const fixedDate = new Date('2024-01-01T00:00:00Z')
+  
   return Array.from({ length: count }).map((_, i) => ({
     id: -i - 1,
     repo_full_name: `placeholder/project-${i + 1}`,
     repo_url: '#',
     language,
-    stars: Math.floor(Math.random() * 5000) + 1000,
+    // Use deterministic star count based on index to avoid hydration mismatch
+    stars: 1000 + (i * 100),
     star_velocity: 0,
     activity_score: 0,
     momentum_score: 0,
@@ -44,8 +49,8 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
     render_services: [],
     has_blueprint_button: false,
     render_complexity_score: 0,
-    created_at: new Date(),
-    last_updated: new Date(),
+    created_at: fixedDate,
+    last_updated: fixedDate,
   }))
 }
 
