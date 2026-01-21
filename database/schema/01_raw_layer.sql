@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS raw_github_repos (
   id SERIAL PRIMARY KEY,
   repo_full_name VARCHAR(255) NOT NULL,
   api_response JSONB NOT NULL,
+  readme_content TEXT,
   fetch_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
   source_language VARCHAR(50),
   source_type VARCHAR(20), -- 'trending', 'render_ecosystem'

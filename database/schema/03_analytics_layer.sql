@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS dim_repositories (
   repo_full_name VARCHAR(255) NOT NULL,
   repo_url TEXT NOT NULL,
   description TEXT,
+  readme_content TEXT,
   language VARCHAR(50) NOT NULL,
   created_at TIMESTAMP NOT NULL,
   uses_render BOOLEAN DEFAULT FALSE,
