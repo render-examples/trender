@@ -92,8 +92,19 @@ async def fetch_language_repos(language: str, github_api: GitHubAPIClient,
     if language == 'TypeScript':
         repos = await filter_nextjs_repos(repos, github_api, min_version=16)
 
-    # Store raw API responses
-    await store_raw_repos(repos, db_pool, source_language=language)
+    # Fetch READMEs for all repos
+    readme_contents = {}
+    for repo in repos[:100]:  # Limit to top 100
+        try:
+            owner, name = repo.get('full_name', '/').split('/')
+            readme = await github_api.fetch_readme(owner, name)
+            if readme:
+                readme_contents[repo.get('full_name')] = readme
+        except:
+            pass
+    
+    # Store raw API responses with READMEs
+    await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
 
     # Spawn batch analysis tasks
     batch_results = await analyze_repo_batch(repos[:100], github_api, db_pool)
@@ -207,11 +218,12 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     since_date = datetime.utcnow() - timedelta(days=7)
 
     # Parallel fetch of metrics
-    commits, issues, contributors, render_data = await asyncio.gather(
+    commits, issues, contributors, render_data, readme = await asyncio.gather(
         github_api.get_commits(owner, name, since_date),
         github_api.get_issues(owner, name, state='closed', since=since_date),
         github_api.get_contributors(owner, name),
         detect_render_usage(repo, github_api, db_pool),
+        github_api.fetch_readme(owner, name),
         return_exceptions=True
     )
 
@@ -220,6 +232,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     issues = issues if not isinstance(issues, Exception) else []
     contributors = contributors if not isinstance(contributors, Exception) else []
     render_data = render_data if not isinstance(render_data, Exception) else {}
+    readme = readme if not isinstance(readme, Exception) else None
 
     # Store raw metrics
     await store_raw_metrics(repo.get('full_name'), 'commits', {'count': len(commits), 'commits': commits}, db_pool)
@@ -232,6 +245,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'repo_url': repo.get('html_url'),
         'language': repo.get('language'),
         'description': repo.get('description'),
+        'readme_content': readme,
         'stars': repo.get('stargazers_count', 0),
         'forks': repo.get('forks_count', 0),
         'open_issues': repo.get('open_issues_count', 0),

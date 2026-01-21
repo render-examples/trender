@@ -39,10 +39,13 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 sre.render_services,
                 sre.render_complexity_score,
                 sre.has_blueprint_button,
-                sre.service_count
+                sre.service_count,
+                rgr.readme_content
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre
                 ON srv.repo_full_name = sre.repo_full_name
+            LEFT JOIN raw_github_repos rgr
+                ON srv.repo_full_name = rgr.repo_full_name
             WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
         """)
@@ -52,7 +55,8 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
 
 
 async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
-                          source_language: str = None, source_type: str = 'trending'):
+                          source_language: str = None, source_type: str = 'trending',
+                          readme_contents: Dict[str, str] = None):
     """
     Store raw repository data in the raw layer.
 
@@ -61,14 +65,17 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
         db_pool: Database connection pool
         source_language: Programming language filter used
         source_type: Type of source ('trending' or 'render_ecosystem')
+        readme_contents: Dictionary mapping repo full_name to README content
     """
     async with db_pool.acquire() as conn:
         for repo in repos:
+            repo_name = repo.get('full_name', '')
+            readme = readme_contents.get(repo_name) if readme_contents else None
             await conn.execute("""
                 INSERT INTO raw_github_repos
-                    (repo_full_name, api_response, source_language, source_type)
-                VALUES ($1, $2, $3, $4)
-            """, repo.get('full_name', ''), repo, source_language, source_type)
+                    (repo_full_name, api_response, readme_content, source_language, source_type)
+                VALUES ($1, $2, $3, $4, $5)
+            """, repo_name, repo, readme, source_language, source_type)
 
 
 async def store_raw_metrics(repo_full_name: str, metric_type: str,

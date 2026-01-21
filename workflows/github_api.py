@@ -184,6 +184,27 @@ class GitHubAPIClient:
         except Exception:
             return None
 
+    async def fetch_readme(self, owner: str, repo: str) -> Optional[str]:
+        """
+        Fetch README content from repository.
+        Tries common README filenames (README.md, README.rst, README.txt, README).
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            README content as string, or None if not found
+        """
+        readme_filenames = ['README.md', 'readme.md', 'README.rst', 'README.txt', 'README']
+        
+        for filename in readme_filenames:
+            content = await self.get_file_contents(owner, repo, filename)
+            if content:
+                return content
+        
+        return None
+
     async def search_by_topic(self, topic: str) -> List[Dict]:
         """
         Search repositories by topic.

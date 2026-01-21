@@ -45,7 +45,7 @@ async def upsert_dim_repositories(repos: List[Dict], conn: asyncpg.Connection):
 
         # Check if repo exists and if data has changed
         existing = await conn.fetchrow("""
-            SELECT repo_key, description, uses_render, render_category
+            SELECT repo_key, description, readme_content, uses_render, render_category
             FROM dim_repositories
             WHERE repo_full_name = $1 AND is_current = TRUE
         """, repo_name)
@@ -54,6 +54,7 @@ async def upsert_dim_repositories(repos: List[Dict], conn: asyncpg.Connection):
         if existing:
             # Check if significant fields have changed
             if (existing['description'] != repo.get('description') or
+                existing['readme_content'] != repo.get('readme_content') or
                 existing['uses_render'] != repo.get('uses_render') or
                 existing['render_category'] != repo.get('render_category')):
                 needs_update = True
@@ -69,22 +70,22 @@ async def upsert_dim_repositories(repos: List[Dict], conn: asyncpg.Connection):
             # Insert new record
             await conn.execute("""
                 INSERT INTO dim_repositories
-                    (repo_full_name, repo_url, description, language, created_at,
+                    (repo_full_name, repo_url, description, readme_content, language, created_at,
                      uses_render, render_category, valid_from, is_current)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), TRUE)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
             """, repo_name, repo.get('repo_url'), repo.get('description'),
-                repo.get('language'), repo.get('created_at'),
+                repo.get('readme_content'), repo.get('language'), repo.get('created_at'),
                 repo.get('uses_render', False), repo.get('render_category'))
 
         elif not existing:
             # Insert new record
             await conn.execute("""
                 INSERT INTO dim_repositories
-                    (repo_full_name, repo_url, description, language, created_at,
+                    (repo_full_name, repo_url, description, readme_content, language, created_at,
                      uses_render, render_category, valid_from, is_current)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), TRUE)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
             """, repo_name, repo.get('repo_url'), repo.get('description'),
-                repo.get('language'), repo.get('created_at'),
+                repo.get('readme_content'), repo.get('language'), repo.get('created_at'),
                 repo.get('uses_render', False), repo.get('render_category'))
 
 
