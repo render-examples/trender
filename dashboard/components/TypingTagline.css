@@ -1,0 +1,94 @@
+.typing-tagline-container {
+  width: 100%;
+  display: flex;
+  padding: 1.5rem 2rem 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.typing-tagline {
+  font-size: 1.1rem;
+  color: #a1a1aa;
+  position: relative;
+  display: inline-block;
+  margin: 0;
+}
+
+.typing-text {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 3px solid #60a5fa;
+  animation: 
+    typing 3.5s steps(75, end) forwards,
+    blink-caret 0.75s step-end infinite;
+  animation-delay: 0s, 0s;
+  max-width: 0;
+}
+
+@keyframes typing {
+  from {
+    max-width: 0;
+  }
+  to {
+    max-width: 100%;
+  }
+}
+
+@keyframes blink-caret {
+  from, to {
+    border-color: transparent;
+  }
+  50% {
+    border-color: #60a5fa;
+  }
+}
+
+/* Stop blinking after typing completes */
+.typing-text {
+  animation: 
+    typing 3.5s steps(75, end) forwards,
+    blink-caret 0.75s step-end 5,
+    remove-caret 0s 3.75s forwards;
+}
+
+@keyframes remove-caret {
+  to {
+    border-right-color: transparent;
+  }
+}
+
+@media (max-width: 768px) {
+  .typing-tagline-container {
+    padding: 1rem 1.5rem 0.5rem;
+  }
+
+  .typing-tagline {
+    font-size: 0.95rem;
+  }
+
+  .typing-text {
+    animation: 
+      typing 3s steps(75, end) forwards,
+      blink-caret 0.75s step-end 4,
+      remove-caret 0s 3s forwards;
+  }
+}
+
+@media (max-width: 480px) {
+  .typing-tagline-container {
+    padding: 0.75rem 1rem 0.5rem;
+  }
+
+  .typing-tagline {
+    font-size: 0.85rem;
+  }
+
+  .typing-text {
+    border-right-width: 2px;
+    animation: 
+      typing 2.5s steps(75, end) forwards,
+      blink-caret 0.75s step-end 4,
+      remove-caret 0s 2.5s forwards;
+  }
+}
+

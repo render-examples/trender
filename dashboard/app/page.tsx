@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { getTopReposByLanguage, getTopRepos } from '@/lib/db'
 import ScrollableRow from '@/components/ScrollableRow'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
+import TypingTagline from '@/components/TypingTagline'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,7 @@ function RowSkeleton({ title }: { title: string }) {
 export default async function Home() {
   return (
     <div className="space-y-8">
+      <TypingTagline />
       
       <Suspense fallback={<RowSkeleton title="Render" />}>
         <RenderRow />
