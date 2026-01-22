@@ -38,7 +38,7 @@ async def main_analysis_task() -> Dict:
 
     Returns execution summary.
     """
-    execution_start = datetime.utcnow()
+    execution_start = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
     github_api, db_pool = await init_connections()
 
     try:
@@ -59,7 +59,7 @@ async def main_analysis_task() -> Dict:
         final_result = await aggregate_results(results, db_pool, execution_start)
 
         # Store execution stats
-        execution_time = (datetime.utcnow() - execution_start).total_seconds()
+        execution_time = (datetime.now(datetime.UTC) - execution_start).total_seconds() if hasattr(datetime, 'UTC') else (datetime.utcnow() - execution_start).total_seconds()
         await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
 
         return final_result
@@ -85,7 +85,7 @@ async def fetch_language_repos(language: str, github_api: GitHubAPIClient,
     repos = await github_api.search_repositories(
         language=language,
         sort='stars',
-        updated_since=datetime.utcnow() - timedelta(days=30)
+        updated_since=(datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()) - timedelta(days=30)
     )
 
     # TypeScript-specific filtering for Next.js >= 16
@@ -215,7 +215,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     owner, name = repo.get('full_name', '/').split('/')
 
     # Fetch detailed metrics
-    since_date = datetime.utcnow() - timedelta(days=7)
+    since_date = (datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()) - timedelta(days=7)
 
     # Parallel fetch of metrics
     commits, issues, contributors, render_data, readme = await asyncio.gather(
@@ -372,7 +372,6 @@ async def analyze_render_projects(render_repos: List[Dict],
     return enriched_projects
 
 
-@task
 async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                             execution_start: datetime) -> Dict:
     """
@@ -412,13 +411,12 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
 
     return {
         'repos_processed': len(all_repos),
-        'execution_time': (datetime.utcnow() - execution_start).total_seconds(),
+        'execution_time': ((datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()) - execution_start).total_seconds(),
         'languages': TARGET_LANGUAGES,
         'success': True
     }
 
 
-@task
 async def store_execution_stats(duration: float, repos_count: int,
                                 db_pool: asyncpg.Pool) -> None:
     """
@@ -440,7 +438,7 @@ async def store_execution_stats(duration: float, repos_count: int,
                  tasks_executed, tasks_succeeded, parallel_speedup_factor,
                  languages_processed, success_rate)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, datetime.utcnow(), duration, repos_count, 9, 9,
+        """, datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow(), duration, repos_count, 9, 9,
             parallel_speedup, TARGET_LANGUAGES, 1.0)
 
 
