@@ -11,14 +11,20 @@ from typing import Dict, List, Optional
 
 
 class GitHubAPIClient:
-    """Async GitHub API client with OAuth token authentication."""
+    """Async GitHub API client with token authentication.
+    
+    Supports both OAuth App tokens and Personal Access Tokens (PAT).
+    """
 
     def __init__(self, access_token: str):
         """
-        Initialize GitHub API client with a GitHub OAuth access token.
+        Initialize GitHub API client with a GitHub access token.
         
         Args:
-            access_token: GitHub OAuth access token (obtained via oauth_setup.py)
+            access_token: GitHub access token - can be either:
+                         - Personal Access Token (PAT) from GitHub settings
+                         - OAuth token from OAuth App flow
+                         Both work identically for API access.
         """
         self.access_token = access_token
         self.base_url = "https://api.github.com"

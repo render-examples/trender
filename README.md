@@ -112,7 +112,7 @@ Or use the Render Dashboard: **Workflows** → **trender-wf** → **Tasks** → 
 
 ### Prerequisites
 
-- GitHub OAuth App (we'll create this in step 2)
+- GitHub authentication (Personal Access Token or OAuth App - covered in step 2)
 - Render account
 - Node.js 18+ (for dashboard)
 - Python 3.11+ (for workflows)
@@ -124,122 +124,135 @@ git clone <your-repo-url>
 cd trender
 ```
 
-### 2. One-Time GitHub OAuth Setup
+### 2. GitHub Authentication Setup
 
-This is a **one-time setup** that creates a long-lived GitHub access token for the workflow to use. You'll need to complete this before deploying to Render.
+Trender needs a GitHub access token to fetch repository data. You can choose between two authentication methods:
 
-#### Step 2.1: Create GitHub OAuth App
+---
 
-1. Go to https://github.com/settings/developers
-2. Click **"New OAuth App"**
-3. Fill in the details:
-   - **Application name**: `Trender Analytics` (or your choice)
-   - **Homepage URL**: Your repository URL or `http://localhost:3000`
-   - **Authorization callback URL**: `http://localhost:8000/callback`
-4. Click **"Register application"**
-5. Note your **Client ID** (starts with `Iv1.`)
-6. Click **"Generate a new client secret"** and save it securely
+#### 🎯 **Option A: Personal Access Token (PAT) - Recommended**
 
-**Important Notes:**
-- The callback URL `http://localhost:8000/callback` is required for the authorization flow
-- Keep your Client Secret secure - you'll need it for the next step
-- This OAuth app allows Trender to access GitHub's API on your behalf
+**Best for:** Individual developers, quick setup, local development
 
-#### Step 2.2: Add OAuth Credentials to .env
+This is the **simplest method** - just create a token from GitHub settings.
 
-Add your GitHub OAuth credentials to `.env`:
-
-```bash
-GITHUB_CLIENT_ID=Iv1.your_client_id_here
-GITHUB_CLIENT_SECRET=your_client_secret_here
-```
-
-#### Step 2.3: Generate Access Token
-
-Run the OAuth setup script to generate your access token:
+##### Step 1: Run the auth setup script
 
 ```bash
 cd workflows
 pip install -r requirements.txt
-python oauth_setup.py
+python auth_setup.py
 ```
 
-**What happens during authorization:**
-1. A local server starts on `http://localhost:8000`
-2. Your browser automatically opens to GitHub's authorization page
-3. Review the requested permissions:
-   - **`repo`**: Read repository data (stars, forks, commits)
-   - **`read:org`**: Read organization membership (for Render ecosystem detection)
-4. Click **"Authorize"** to approve the application
-5. You'll be redirected to `http://localhost:8000/callback`
-6. The script exchanges the authorization code for an access token
-7. Your access token is displayed in the terminal
+##### Step 2: Choose option [1] for PAT
 
-**Example output:**
-```
-=== GitHub OAuth App Setup ===
+##### Step 3: Follow the interactive prompts:
+1. Open https://github.com/settings/tokens/new in your browser
+2. Configure the token:
+   - **Note**: `Trender Analytics Access`
+   - **Expiration**: `No expiration` (or your preference)
+   - **Scopes**:
+     - ✓ `repo` (Full control of private repositories)
+     - ✓ `read:org` (Read org and team membership)
+3. Click **"Generate token"**
+4. Copy the token (starts with `ghp_` or `github_pat_`)
+5. Paste it into the terminal when prompted
 
-1. Starting local callback server on port 8000...
-2. Opening browser for authorization...
-3. Waiting for authorization callback...
-4. Authorization code received!
-5. Exchanging code for access token...
+##### Step 4: Save your token
 
-============================================================
-✓ SUCCESS! Your GitHub OAuth access token:
+The script will verify your token and display:
+
+```bash
+✅ SUCCESS! Your GitHub access token (PAT):
 ============================================================
 
 ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ============================================================
-Add this to your .env file and Render Dashboard:
+Add this to your .env file:
 GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-============================================================
 ```
 
-#### Step 2.4: Save Your Access Token
-
-1. **Copy the token** from the terminal output
-2. Add it to your `.env` file:
-   ```bash
-   GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-3. **Store it securely** - you'll need to add this to Render's environment variables later (step 8)
-
-**Security Best Practices:**
-- ✅ This token does **not expire** - you only generate it once
-- ✅ Never commit the token to version control (`.env` is in `.gitignore`)
-- ✅ The token has limited scopes (`repo` and `read:org` only)
-- ✅ You can revoke access anytime at https://github.com/settings/applications
-- ⚠️  Treat this token like a password
-
-#### Troubleshooting OAuth Setup
-
-**Problem: Browser doesn't open automatically**
-- Manually navigate to the URL shown in the terminal
-- The URL will look like: `https://github.com/login/oauth/authorize?client_id=...`
-
-**Problem: Port 8000 is already in use**
+Add the token to your `.env` file:
 ```bash
-# Find and kill the process using port 8000
-lsof -ti:8000 | xargs kill -9
-# Then run oauth_setup.py again
+GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-**Problem: "Bad verification code" error**
-- The authorization code can only be used once
-- Run `python oauth_setup.py` again to get a new code
-- Complete the authorization within 10 minutes
+**✅ Done!** Skip to Step 3.
 
-**Problem: Need to regenerate token**
-- Go to https://github.com/settings/tokens
-- Find and revoke the old token
-- Run `python oauth_setup.py` again to generate a new one
+---
 
-**Problem: "Access denied" when authorizing**
-- Ensure you have admin access to your GitHub account
-- Try signing out of GitHub and back in
-- Clear your browser cookies for github.com
+#### 🔐 **Option B: OAuth App - Advanced**
+
+**Best for:** Team setups, production deployments, requiring user authorization flow
+
+##### Step 1: Create GitHub OAuth App
+
+1. Go to https://github.com/settings/developers
+2. Click **"New OAuth App"**
+3. Fill in the details:
+   - **Application name**: `Trender Analytics`
+   - **Homepage URL**: `http://localhost:3000`
+   - **Authorization callback URL**: `http://localhost:8000/callback`
+4. Click **"Register application"**
+5. Note your **Client ID** (starts with `Ov23` or `Iv1.`)
+6. Click **"Generate a new client secret"** and save it
+
+##### Step 2: Add OAuth credentials to .env
+
+```bash
+GITHUB_CLIENT_ID=Ov23xxxxx_or_Iv1.xxxxx
+GITHUB_CLIENT_SECRET=your_secret_here
+```
+
+##### Step 3: Run the auth setup script
+
+```bash
+cd workflows
+pip install -r requirements.txt
+python auth_setup.py
+```
+
+Choose option [2] for OAuth, then:
+1. The script starts a local server on port 8000
+2. Your browser opens to GitHub's authorization page
+3. Click **"Authorize"** to approve
+4. The script exchanges the auth code for a token
+5. Your `GITHUB_ACCESS_TOKEN` is displayed
+
+##### Step 4: Save your token
+
+Add the token to your `.env` file:
+```bash
+GITHUB_ACCESS_TOKEN=gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+---
+
+#### 🔒 Security Best Practices (Both Methods)
+
+- ✅ Tokens don't expire (unless you set expiration on PAT)
+- ✅ Never commit tokens to version control (`.env` is in `.gitignore`)
+- ✅ Token scopes: `repo` and `read:org` only
+- ✅ Revoke access anytime at https://github.com/settings/tokens
+- ⚠️  Treat tokens like passwords
+
+#### 🐛 Troubleshooting
+
+**PAT Issues:**
+- **Token doesn't start with `ghp_`**: Classic tokens start with `ghp_`, fine-grained tokens with `github_pat_`
+- **API returns 401**: Token may be expired or revoked. Generate a new one.
+- **Rate limit errors**: Ensure token has proper scopes selected
+
+**OAuth Issues:**
+- **Port 8000 in use**: Run `lsof -ti:8000 | xargs kill -9`, then try again
+- **"Redirect URI mismatch"**: Ensure callback URL in OAuth app is exactly `http://localhost:8000/callback`
+- **Browser doesn't open**: Manually visit the URL shown in the terminal
+- **"Bad verification code"**: Code expires quickly. Run `python auth_setup.py` again
+
+**Both Methods:**
+- **Token verification fails**: Check your internet connection
+- **Need to regenerate**: Revoke old token at https://github.com/settings/tokens and generate new one
 
 ### 3. Set Up Environment Variables
 
@@ -249,10 +262,17 @@ cp .env.example .env
 ```
 
 Your `.env` file should now contain (from step 2):
+
+**If you used PAT (Option A):**
 ```bash
-GITHUB_CLIENT_ID=Iv1.your_client_id_here
-GITHUB_CLIENT_SECRET=your_client_secret_here
 GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**If you used OAuth (Option B):**
+```bash
+GITHUB_CLIENT_ID=Ov23xxxxx_or_Iv1.xxxxx
+GITHUB_CLIENT_SECRET=your_secret_here
+GITHUB_ACCESS_TOKEN=gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Other required variables (add as you complete the setup):
@@ -337,17 +357,19 @@ Deploy to Render:
 
 ### 7. Configure Environment Variables in Render
 
-After deploying via `render.yaml`, add the following environment variables to your **workflow service** (`trender-wf`) in the Render Dashboard:
+After deploying via `render.yaml`, add your GitHub access token to the **workflow service** (`trender-wf`) in the Render Dashboard:
 
-1. Go to your `trender-wf` workflow
+1. Go to your `trender-wf` workflow in Render Dashboard
 2. Navigate to **Environment** tab
 3. Add:
-   - `GITHUB_ACCESS_TOKEN`: The token from step 2
-   - `DATABASE_URL`: Automatically connected from the database
+   - `GITHUB_ACCESS_TOKEN`: The token you generated in step 2 (starts with `ghp_` or `gho_` or `github_pat_`)
+   - `DATABASE_URL`: Automatically connected from the database (no action needed)
 
-**Important:** After adding these variables, trigger a manual deploy:
+**Important:** After adding the token, trigger a manual deploy:
 - Click **"Manual Deploy"** → **"Clear build cache & deploy"**
 - This ensures the environment variables are available to your workflow tasks
+
+**Note:** You only need `GITHUB_ACCESS_TOKEN` in Render. If you used OAuth, you don't need to add `GITHUB_CLIENT_ID` or `GITHUB_CLIENT_SECRET` to Render.
 
 ### 8. Trigger Workflow Runs
 
