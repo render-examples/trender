@@ -7,6 +7,8 @@ from render_sdk.workflows import task, start
 import asyncio
 import asyncpg
 import os
+import logging
+import traceback
 from datetime import datetime, timedelta, date, timezone
 from typing import Dict, List
 
@@ -22,6 +24,13 @@ from etl import extract_from_staging, transform_and_rank, load_to_analytics
 from etl.extract import store_raw_repos, store_raw_metrics
 from etl.transform import deduplicate_repos, chunk_list
 from etl.data_quality import calculate_data_quality_score
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Target languages for analysis
 TARGET_LANGUAGES = ['Python', 'TypeScript', 'Go']
@@ -39,7 +48,10 @@ async def main_analysis_task() -> Dict:
     Returns execution summary.
     """
     execution_start = datetime.now(timezone.utc)
+    logger.info(f"Workflow started at {execution_start}")
+    
     github_api, db_pool = await init_connections()
+    logger.info(f"Connections initialized - github_api: {type(github_api).__name__}, db_pool: {type(db_pool).__name__}")
 
     try:
         # Spawn parallel language analysis tasks
@@ -47,6 +59,7 @@ async def main_analysis_task() -> Dict:
             fetch_language_repos(lang, github_api, db_pool)
             for lang in TARGET_LANGUAGES
         ]
+        logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
 
         # Execute language analysis and Render ecosystem fetch in parallel
         results = await asyncio.gather(
@@ -54,6 +67,16 @@ async def main_analysis_task() -> Dict:
             fetch_render_ecosystem(github_api, db_pool),
             return_exceptions=True
         )
+
+        # Log results from parallel tasks
+        logger.info(f"Parallel tasks completed. Total results: {len(results)}")
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) FAILED: {type(result).__name__}: {str(result)}")
+                logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__())))
+            else:
+                result_len = len(result) if isinstance(result, (list, dict)) else 'N/A'
+                logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
         # Aggregate and store final results
         final_result = await aggregate_results(results, db_pool, execution_start)
@@ -81,12 +104,19 @@ async def fetch_language_repos(language: str, github_api: GitHubAPIClient,
     Returns:
         List of enriched repository dictionaries
     """
+    logger.info(f"fetch_language_repos START for {language}")
+    
     # Search GitHub API
-    repos = await github_api.search_repositories(
-        language=language,
-        sort='stars',
-        updated_since=datetime.now(timezone.utc) - timedelta(days=30)
-    )
+    try:
+        repos = await github_api.search_repositories(
+            language=language,
+            sort='stars',
+            updated_since=datetime.now(timezone.utc) - timedelta(days=30)
+        )
+        logger.info(f"GitHub API returned {len(repos)} repos for {language}")
+    except Exception as e:
+        logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
+        raise
 
     # TypeScript-specific filtering for Next.js >= 16
     if language == 'TypeScript':
@@ -385,12 +415,18 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     Returns:
         Execution summary dictionary
     """
+    logger.info("aggregate_results START")
+    
     # Filter successful results (handle exceptions from gather)
     language_results = [r for r in all_results[:3] if not isinstance(r, Exception)]
     render_results = all_results[3] if len(all_results) > 3 and not isinstance(all_results[3], Exception) else []
+    
+    logger.info(f"Successful language tasks: {len(language_results)}/3")
+    logger.info(f"Render results: type={type(render_results).__name__}, is_list={isinstance(render_results, list)}")
 
     # Combine and deduplicate
     all_repos = deduplicate_repos(language_results + [render_results])
+    logger.info(f"After deduplication: {len(all_repos)} total unique repos")
 
     # Calculate metrics for all repos
     scored_repos = calculate_metrics(all_repos)
