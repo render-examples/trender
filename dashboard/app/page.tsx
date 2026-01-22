@@ -5,6 +5,11 @@ import LoadingSkeleton from '@/components/LoadingSkeleton'
 
 export const dynamic = 'force-dynamic'
 
+async function RenderRow() {
+  const repos = await getTopRepos(50, undefined, true)
+  return <ScrollableRow title="Render Projects" repos={repos} />
+}
+
 async function PythonRow() {
   const repos = await getTopReposByLanguage('Python', 50)
   return <ScrollableRow title="Python" repos={repos} />
@@ -20,11 +25,6 @@ async function GoRow() {
   return <ScrollableRow title="Go" repos={repos} />
 }
 
-async function RenderRow() {
-  const repos = await getTopRepos(50, undefined, true)
-  return <ScrollableRow title="Render Projects" repos={repos} />
-}
-
 function RowSkeleton({ title }: { title: string }) {
   return (
     <div className="mb-12">
@@ -37,6 +37,11 @@ function RowSkeleton({ title }: { title: string }) {
 export default async function Home() {
   return (
     <div className="space-y-8">
+      
+      <Suspense fallback={<RowSkeleton title="Render Projects" />}>
+        <RenderRow />
+      </Suspense>
+      
       <Suspense fallback={<RowSkeleton title="Python" />}>
         <PythonRow />
       </Suspense>
@@ -49,9 +54,6 @@ export default async function Home() {
         <GoRow />
       </Suspense>
 
-      <Suspense fallback={<RowSkeleton title="Render Projects" />}>
-        <RenderRow />
-      </Suspense>
     </div>
   )
 }

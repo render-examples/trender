@@ -28,7 +28,7 @@ export default function RepoCard({ repo }: RepoCardProps) {
     >
       <motion.div
         layout
-        className="bg-zinc-900 rounded-lg p-6 border-2 border-zinc-800 hover:border-white transition-colors"
+        className="bg-black p-6 border border-zinc-700 hover:border-white transition-colors"
         style={{ 
           width: isExpanded ? '600px' : '320px',
           minHeight: isExpanded ? 'auto' : '220px'

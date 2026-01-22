@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import Header from '@/components/Header'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -18,19 +19,47 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <div className="min-h-screen bg-black relative">
-          {/* Fixed top bar with solid background */}
-          <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b border-zinc-800">
-            <div className="px-8 py-6">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Trender
-              </h1>
-            </div>
-          </div>
+          <Header />
 
           {/* Main Content */}
-          <main className="pt-24 pb-12 relative z-10">
+          <main className="pt-28 pb-12 relative z-10">
             {children}
           </main>
+
+          {/* Footer */}
+          <footer className="app-footer">
+            <p className="footer-links">
+              <a 
+                href="https://x.com/render" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="footer-link"
+              >
+                X
+              </a>
+              &nbsp; &nbsp; &nbsp; &nbsp;
+              <a 
+                href="https://www.linkedin.com/company/render-com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="footer-link"
+              >
+                LinkedIn
+              </a>
+              &nbsp; &nbsp; &nbsp; &nbsp;
+              <a 
+                href="https://github.com/render-examples/trender" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="footer-link"
+              >
+                GitHub
+              </a>
+            </p>
+            <p className="footer-copyright">
+              © Render {new Date().getFullYear()}
+            </p>
+          </footer>
         </div>
       </body>
     </html>
