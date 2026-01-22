@@ -34,18 +34,16 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 srv.issues_closed_last_7_days,
                 srv.active_contributors,
                 srv.uses_render,
+                srv.readme_content,
                 srv.data_quality_score,
                 sre.render_category,
                 sre.render_services,
                 sre.render_complexity_score,
                 sre.has_blueprint_button,
-                sre.service_count,
-                rgr.readme_content
+                sre.service_count
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre
                 ON srv.repo_full_name = sre.repo_full_name
-            LEFT JOIN raw_github_repos rgr
-                ON srv.repo_full_name = rgr.repo_full_name
             WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
         """)
