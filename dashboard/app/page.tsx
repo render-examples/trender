@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 async function RenderRow() {
   const repos = await getTopRepos(50, undefined, true)
-  return <ScrollableRow title="Render Projects" repos={repos} />
+  return <ScrollableRow title="Render" repos={repos} />
 }
 
 async function PythonRow() {
@@ -38,7 +38,7 @@ export default async function Home() {
   return (
     <div className="space-y-8">
       
-      <Suspense fallback={<RowSkeleton title="Render Projects" />}>
+      <Suspense fallback={<RowSkeleton title="Render" />}>
         <RenderRow />
       </Suspense>
       

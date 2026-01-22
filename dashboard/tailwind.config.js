@@ -16,6 +16,13 @@ module.exports = {
           700: '#0369a1',
         },
       },
+      fontFamily: {
+        sans: ['SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Courier New', 'monospace'],
+        mono: ['SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Courier New', 'monospace'],
+      },
+      letterSpacing: {
+        'code': '0.4px',
+      },
     },
   },
   plugins: [],
