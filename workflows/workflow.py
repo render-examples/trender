@@ -438,7 +438,7 @@ async def store_execution_stats(duration: float, repos_count: int,
                  tasks_executed, tasks_succeeded, parallel_speedup_factor,
                  languages_processed, success_rate)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, datetime.now(timezone.utc), duration, repos_count, 9, 9,
+        """, datetime.now(timezone.utc).replace(tzinfo=None), duration, repos_count, 9, 9,
             parallel_speedup, TARGET_LANGUAGES, 1.0)
 
 

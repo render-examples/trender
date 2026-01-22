@@ -4,7 +4,7 @@ Calculates data quality scores for repositories in staging layer.
 """
 
 from typing import Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def calculate_data_quality_score(repo: Dict) -> float:
@@ -93,10 +93,11 @@ def calculate_freshness_score(repo: Dict) -> float:
         except:
             return 0.5
 
-    now = datetime.utcnow()
-    if updated_at.tzinfo:
-        import pytz
-        now = now.replace(tzinfo=pytz.UTC)
+    # Make timezone-aware for comparison
+    now = datetime.now(timezone.utc)
+    if not updated_at.tzinfo:
+        # If updated_at is naive, assume it's UTC
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
 
     days_since_update = (now - updated_at).days
 

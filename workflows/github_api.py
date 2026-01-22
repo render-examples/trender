@@ -6,7 +6,7 @@ Async GitHub API client with rate limiting and retry logic.
 import aiohttp
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 
@@ -61,7 +61,7 @@ class GitHubAPIClient:
         # Check rate limit
         if self.rate_limit_remaining < 100:
             if self.rate_limit_reset:
-                sleep_duration = max(self.rate_limit_reset - datetime.utcnow().timestamp(), 0)
+                sleep_duration = max(self.rate_limit_reset - datetime.now(timezone.utc).timestamp(), 0)
                 await asyncio.sleep(sleep_duration + 5)
 
         for attempt in range(retry_count):

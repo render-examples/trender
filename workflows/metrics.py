@@ -4,7 +4,7 @@ Calculates momentum, activity, and velocity scores for repositories.
 """
 
 from typing import Dict, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def calculate_metrics(enriched_repos: List[Dict]) -> List[Dict]:
@@ -63,7 +63,11 @@ def calculate_metrics(enriched_repos: List[Dict]) -> List[Dict]:
                     created_at = None
 
             if created_at:
-                age_days = (datetime.utcnow() - created_at.replace(tzinfo=None)).days
+                now = datetime.now(timezone.utc)
+                # Ensure both datetimes are timezone-aware for comparison
+                if not created_at.tzinfo:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                age_days = (now - created_at).days
                 if age_days > 180:
                     repo['momentum_score'] = round(repo['momentum_score'] * 0.9, 2)
 
