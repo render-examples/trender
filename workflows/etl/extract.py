@@ -4,6 +4,7 @@ Extracts validated data from staging layer for transformation.
 """
 
 import asyncpg
+import json
 from typing import List, Dict
 
 
@@ -73,7 +74,7 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
                 INSERT INTO raw_github_repos
                     (repo_full_name, api_response, readme_content, source_language, source_type)
                 VALUES ($1, $2, $3, $4, $5)
-            """, repo_name, repo, readme, source_language, source_type)
+            """, repo_name, json.dumps(repo), readme, source_language, source_type)
 
 
 async def store_raw_metrics(repo_full_name: str, metric_type: str,
@@ -92,4 +93,4 @@ async def store_raw_metrics(repo_full_name: str, metric_type: str,
             INSERT INTO raw_repo_metrics
                 (repo_full_name, metric_type, metric_data)
             VALUES ($1, $2, $3)
-        """, repo_full_name, metric_type, metric_data)
+        """, repo_full_name, metric_type, json.dumps(metric_data))
