@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS dim_repositories (
 );
 
 -- Indexes for dim_repositories
-CREATE INDEX IF NOT EXISTS idx_dim_repos_name_current ON dim_repositories(repo_full_name, is_current);
+-- Unique partial index to ensure only one current version per repo
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_repos_name_current_unique 
+  ON dim_repositories(repo_full_name) WHERE is_current = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dim_repos_language ON dim_repositories(language);
 CREATE INDEX IF NOT EXISTS idx_dim_repos_render ON dim_repositories(uses_render) WHERE uses_render = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dim_repos_valid ON dim_repositories(valid_from, valid_to);

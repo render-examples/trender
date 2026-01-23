@@ -169,7 +169,8 @@ async def fetch_language_repos(language: str) -> List[Dict]:
         await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
 
         # Spawn batch analysis task (subtask initializes its own connections)
-        batch_results = await analyze_repo_batch(repos[:repo_limit])
+        # Pass README contents to avoid duplicate API calls
+        batch_results = await analyze_repo_batch(repos[:repo_limit], readme_contents)
         
         logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results)} results")
         return batch_results
@@ -179,7 +180,7 @@ async def fetch_language_repos(language: str) -> List[Dict]:
 
 
 @task
-async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
+async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] = None) -> List[Dict]:
     """
     Analyze a batch of repositories with detailed metrics.
     
@@ -187,11 +188,13 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
 
     Args:
         repos: List of repository dictionaries (JSON-serializable)
+        readme_contents: Optional dict mapping repo_full_name to README content (to avoid duplicate API calls)
 
     Returns:
         List of enriched repository dictionaries
     """
     logger.info(f"analyze_repo_batch START: {len(repos)} repos")
+    readme_contents = readme_contents or {}
     
     # Initialize connections for this independent task
     try:
@@ -209,7 +212,7 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
         # Process repos in batches of 10
         for batch in chunk_list(repos, size=10):
             batch_tasks = [
-                analyze_single_repo(repo, github_api, db_pool)
+                analyze_single_repo(repo, github_api, db_pool, readme_contents.get(repo.get('full_name')))
                 for repo in batch
             ]
 
@@ -233,7 +236,7 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
 
 
 async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
-                              db_pool: asyncpg.Pool) -> Dict:
+                              db_pool: asyncpg.Pool, readme_content: str = None) -> Dict:
     """
     Analyze a single repository with detailed metrics.
 
@@ -241,6 +244,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         repo: Repository dictionary
         github_api: GitHub API client
         db_pool: Database connection pool
+        readme_content: Optional pre-fetched README content (to avoid duplicate API call)
 
     Returns:
         Enriched repository dictionary
@@ -256,22 +260,40 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     # Fetch detailed metrics
     since_date = datetime.now(timezone.utc) - timedelta(days=7)
 
-    # Parallel fetch of metrics
-    commits, issues, contributors, render_data, readme = await asyncio.gather(
-        github_api.get_commits(owner, name, since_date),
-        github_api.get_issues(owner, name, state='closed', since=since_date),
-        github_api.get_contributors(owner, name),
-        detect_render_usage(repo, github_api, db_pool),
-        github_api.fetch_readme(owner, name),
-        return_exceptions=True
-    )
-
-    # Handle exceptions
-    commits = commits if not isinstance(commits, Exception) else []
-    issues = issues if not isinstance(issues, Exception) else []
-    contributors = contributors if not isinstance(contributors, Exception) else []
-    render_data = render_data if not isinstance(render_data, Exception) else {}
-    readme = readme if not isinstance(readme, Exception) else None
+    # Parallel fetch of metrics (skip README if already provided)
+    if readme_content is not None:
+        # README already fetched, don't call API again
+        commits, issues, contributors, render_data = await asyncio.gather(
+            github_api.get_commits(owner, name, since_date),
+            github_api.get_issues(owner, name, state='closed', since=since_date),
+            github_api.get_contributors(owner, name),
+            detect_render_usage(repo, github_api, db_pool),
+            return_exceptions=True
+        )
+        readme = readme_content
+        
+        # Handle exceptions
+        commits = commits if not isinstance(commits, Exception) else []
+        issues = issues if not isinstance(issues, Exception) else []
+        contributors = contributors if not isinstance(contributors, Exception) else []
+        render_data = render_data if not isinstance(render_data, Exception) else {}
+    else:
+        # Fetch README along with other metrics
+        commits, issues, contributors, render_data, readme = await asyncio.gather(
+            github_api.get_commits(owner, name, since_date),
+            github_api.get_issues(owner, name, state='closed', since=since_date),
+            github_api.get_contributors(owner, name),
+            detect_render_usage(repo, github_api, db_pool),
+            github_api.fetch_readme(owner, name),
+            return_exceptions=True
+        )
+        
+        # Handle exceptions
+        commits = commits if not isinstance(commits, Exception) else []
+        issues = issues if not isinstance(issues, Exception) else []
+        contributors = contributors if not isinstance(contributors, Exception) else []
+        render_data = render_data if not isinstance(render_data, Exception) else {}
+        readme = readme if not isinstance(readme, Exception) else None
 
     # Store raw metrics
     await store_raw_metrics(repo.get('full_name'), 'commits', {'count': len(commits), 'commits': commits}, db_pool)

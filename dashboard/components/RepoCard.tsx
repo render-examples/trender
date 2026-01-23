@@ -13,16 +13,24 @@ interface RepoCardProps {
 export default function RepoCard({ repo }: RepoCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  // Get first ~500 chars of README for preview
-  const readmePreview = repo.readme_content
-    ? repo.readme_content.substring(0, 500) + (repo.readme_content.length > 500 ? '...' : '')
-    : 'Not available'
+  const handleCardClick = () => {
+    if (isExpanded) {
+      // Open GitHub URL in new tab when expanded
+      window.open(repo.repo_url, '_blank', 'noopener,noreferrer')
+    } else {
+      // Toggle expansion when collapsed
+      setIsExpanded(true)
+    }
+  }
+
+  // Show more content when expanded for better scrolling
+  const readmeContent = repo.readme_content || 'Not available'
 
   return (
     <motion.div
       layout
       className="flex-shrink-0 cursor-pointer"
-      onClick={() => setIsExpanded(!isExpanded)}
+      onClick={handleCardClick}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ 
@@ -32,10 +40,10 @@ export default function RepoCard({ repo }: RepoCardProps) {
     >
       <motion.div
         layout
-        className="bg-black p-6 border border-zinc-700 hover:border-white transition-colors flex flex-col"
+        className="bg-black p-6 border border-zinc-700 hover:border-white transition-colors flex flex-col relative"
         style={{ 
-          width: isExpanded ? '600px' : '320px',
-          height: '220px'
+          width: isExpanded ? '600px' : '380px',
+          height: '280px'
         }}
       >
         <div className="flex items-start justify-between mb-3 flex-shrink-0">
@@ -67,12 +75,39 @@ export default function RepoCard({ repo }: RepoCardProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className="mt-4 pt-4 flex-1 flex flex-col overflow-hidden"
+              className="mt-4 pt-4 border-t border-zinc-700 flex-1 flex flex-col overflow-hidden"
             >
               <h4 className="text-sm font-semibold text-white mb-2 flex-shrink-0">README</h4>
-              <div className="text-xs text-zinc-400 overflow-y-auto prose prose-invert prose-sm max-w-none flex-1">
-                <ReactMarkdown>{readmePreview}</ReactMarkdown>
+              <div className="text-xs text-zinc-400 overflow-y-auto prose prose-invert prose-sm max-w-none flex-1 pr-2">
+                <ReactMarkdown>{readmeContent}</ReactMarkdown>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Arrow icon in bottom right when expanded */}
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="absolute bottom-4 right-4 text-zinc-400 hover:text-white transition-colors"
+            >
+              <svg 
+                className="w-5 h-5" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
+                />
+              </svg>
             </motion.div>
           )}
         </AnimatePresence>
