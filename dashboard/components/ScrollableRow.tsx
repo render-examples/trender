@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
 import RepoCard from './RepoCard'
 import LoadingSkeleton from './LoadingSkeleton'
@@ -102,15 +103,17 @@ export default function ScrollableRow({ title, repos }: ScrollableRowProps) {
       </button>
 
       <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-hide">
-        <div className="flex gap-4 px-8 pb-4">
-          {displayRepos.length === 0 ? (
-            <LoadingSkeleton count={10} />
-          ) : (
-            displayRepos.map((repo, index) => (
-              <RepoCard key={`${repo.repo_full_name}-${index}`} repo={repo} />
-            ))
-          )}
-        </div>
+        <LayoutGroup>
+          <div className="flex gap-4 px-8 pb-4">
+            {displayRepos.length === 0 ? (
+              <LoadingSkeleton count={10} />
+            ) : (
+              displayRepos.map((repo, index) => (
+                <RepoCard key={`${repo.repo_full_name}-${index}`} repo={repo} />
+              ))
+            )}
+          </div>
+        </LayoutGroup>
       </div>
     </div>
   )

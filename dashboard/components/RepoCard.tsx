@@ -15,7 +15,7 @@ export default function RepoCard({ repo }: RepoCardProps) {
   // Get first ~500 chars of README for preview
   const readmePreview = repo.readme_content
     ? repo.readme_content.substring(0, 500) + (repo.readme_content.length > 500 ? '...' : '')
-    : 'No README available'
+    : 'Not available'
 
   return (
     <motion.div
@@ -24,17 +24,20 @@ export default function RepoCard({ repo }: RepoCardProps) {
       onClick={() => setIsExpanded(!isExpanded)}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.2 }}
+      transition={{ 
+        layout: { duration: 0.3, ease: "easeInOut" },
+        opacity: { duration: 0.2 }
+      }}
     >
       <motion.div
         layout
-        className="bg-black p-6 border border-zinc-700 hover:border-white transition-colors"
+        className="bg-black p-6 border border-zinc-700 hover:border-white transition-colors flex flex-col"
         style={{ 
           width: isExpanded ? '600px' : '320px',
-          minHeight: isExpanded ? 'auto' : '220px'
+          height: '220px'
         }}
       >
-        <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start justify-between mb-3 flex-shrink-0">
           <motion.h3 
             layout="position"
             className="text-lg font-semibold text-white truncate pr-2"
@@ -51,7 +54,7 @@ export default function RepoCard({ repo }: RepoCardProps) {
 
         <motion.p 
           layout="position"
-          className="text-sm text-zinc-400 mb-3"
+          className="text-sm text-zinc-400 mb-3 flex-shrink-0"
         >
           {repo.description || 'No description available'}
         </motion.p>
@@ -59,25 +62,16 @@ export default function RepoCard({ repo }: RepoCardProps) {
         <AnimatePresence>
           {isExpanded && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className="mt-4 pt-4 border-t border-zinc-800"
+              className="mt-4 pt-4 flex-1 flex flex-col overflow-hidden"
             >
-              <h4 className="text-sm font-semibold text-white mb-2">README Preview</h4>
-              <div className="text-xs text-zinc-400 max-h-60 overflow-y-auto prose prose-invert prose-sm max-w-none">
+              <h4 className="text-sm font-semibold text-white mb-2 flex-shrink-0">README</h4>
+              <div className="text-xs text-zinc-400 overflow-y-auto prose prose-invert prose-sm max-w-none flex-1">
                 <ReactMarkdown>{readmePreview}</ReactMarkdown>
               </div>
-              <a
-                href={repo.repo_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-3 text-xs text-blue-400 hover:text-blue-300"
-                onClick={(e) => e.stopPropagation()}
-              >
-                View on GitHub →
-              </a>
             </motion.div>
           )}
         </AnimatePresence>
