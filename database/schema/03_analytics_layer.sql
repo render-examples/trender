@@ -105,7 +105,8 @@ CREATE TABLE IF NOT EXISTS fact_render_usage (
   service_count INTEGER DEFAULT 1,
   complexity_score INTEGER,
   has_blueprint BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(repo_key, service_key, snapshot_date)
 );
 
 -- Indexes for fact_render_usage

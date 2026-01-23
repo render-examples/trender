@@ -185,7 +185,10 @@ async def insert_render_usage(render_repos: List[Dict], conn: asyncpg.Connection
                         (repo_key, service_key, snapshot_date, service_count,
                          complexity_score, has_blueprint)
                     VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (repo_key, service_key, snapshot_date) DO UPDATE SET
+                        service_count = EXCLUDED.service_count,
+                        complexity_score = EXCLUDED.complexity_score,
+                        has_blueprint = EXCLUDED.has_blueprint
                 """, repo_key, service_key, today,
                     repo.get('service_count', 1),
                     repo.get('render_complexity_score'),

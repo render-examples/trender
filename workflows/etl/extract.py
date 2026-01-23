@@ -74,6 +74,7 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
                 INSERT INTO raw_github_repos
                     (repo_full_name, api_response, readme_content, source_language, source_type)
                 VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (repo_full_name, fetch_timestamp) DO NOTHING
             """, repo_name, json.dumps(repo), readme, source_language, source_type)
 
 
@@ -93,4 +94,5 @@ async def store_raw_metrics(repo_full_name: str, metric_type: str,
             INSERT INTO raw_repo_metrics
                 (repo_full_name, metric_type, metric_data)
             VALUES ($1, $2, $3)
+            ON CONFLICT (repo_full_name, metric_type, fetch_timestamp) DO NOTHING
         """, repo_full_name, metric_type, json.dumps(metric_data))

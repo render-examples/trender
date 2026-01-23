@@ -335,8 +335,14 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     from dateutil import parser as date_parser
     if isinstance(enriched['created_at'], str):
         enriched['created_at'] = date_parser.isoparse(enriched['created_at'])
+        # Ensure timezone-aware (convert to UTC if naive)
+        if enriched['created_at'].tzinfo is None:
+            enriched['created_at'] = enriched['created_at'].replace(tzinfo=timezone.utc)
     if isinstance(enriched['updated_at'], str):
         enriched['updated_at'] = date_parser.isoparse(enriched['updated_at'])
+        # Ensure timezone-aware (convert to UTC if naive)
+        if enriched['updated_at'].tzinfo is None:
+            enriched['updated_at'] = enriched['updated_at'].replace(tzinfo=timezone.utc)
 
     # Calculate data quality score
     enriched['data_quality_score'] = calculate_data_quality_score(enriched)

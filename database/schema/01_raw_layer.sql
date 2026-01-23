@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS raw_github_repos (
   CONSTRAINT valid_source_type CHECK (source_type IN ('trending', 'render_ecosystem'))
 );
 
+-- Unique constraint to prevent exact duplicates within same workflow run
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_repos_unique ON raw_github_repos(repo_full_name, fetch_timestamp);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_raw_repos_fetch ON raw_github_repos(fetch_timestamp);
 CREATE INDEX IF NOT EXISTS idx_raw_repos_name ON raw_github_repos(repo_full_name);
@@ -29,6 +32,9 @@ CREATE TABLE IF NOT EXISTS raw_repo_metrics (
   fetch_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
   CONSTRAINT valid_metric_type CHECK (metric_type IN ('commits', 'issues', 'contributors'))
 );
+
+-- Unique constraint to prevent exact duplicates within same workflow run
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_metrics_unique ON raw_repo_metrics(repo_full_name, metric_type, fetch_timestamp);
 
 -- Indexes for querying metrics
 CREATE INDEX IF NOT EXISTS idx_raw_metrics_repo ON raw_repo_metrics(repo_full_name, fetch_timestamp);
