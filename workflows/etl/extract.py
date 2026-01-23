@@ -95,33 +95,12 @@ async def store_raw_metrics(repo_full_name: str, metric_type: str,
         metric_data: Metric data from GitHub API
         db_pool: Database connection pool
     """
-    from datetime import datetime, timezone
     async with db_pool.acquire() as conn:
-        # #region agent log
-        import json as json_lib
-        # Check constraints for metrics table
-        constraints = await conn.fetch("""
-            SELECT conname, contype, pg_get_constraintdef(oid) as definition
-            FROM pg_constraint
-            WHERE conrelid = 'raw_repo_metrics'::regclass
-        """)
-        constraint_list = [{"name":c['conname'],"type":c['contype'],"definition":c['definition']} for c in constraints]
-        with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"location":"extract.py:155","message":"Metrics table constraints","data":{"constraints":constraint_list},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+'\n')
-        # #endregion
-        
-        try:
-            await conn.execute("""
-                INSERT INTO raw_repo_metrics
-                    (repo_full_name, metric_type, metric_data)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (repo_full_name, metric_type) DO UPDATE SET
-                    metric_data = EXCLUDED.metric_data,
-                    fetch_timestamp = NOW()
-            """, repo_full_name, metric_type, json.dumps(metric_data))
-        except Exception as e:
-            # #region agent log
-            with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"location":"extract.py:168","message":"Metrics INSERT FAILED","data":{"repo_name":repo_full_name,"metric_type":metric_type,"error_type":type(e).__name__,"error_msg":str(e)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+'\n')
-            # #endregion
-            raise
+        await conn.execute("""
+            INSERT INTO raw_repo_metrics
+                (repo_full_name, metric_type, metric_data)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (repo_full_name, metric_type) DO UPDATE SET
+                metric_data = EXCLUDED.metric_data,
+                fetch_timestamp = NOW()
+        """, repo_full_name, metric_type, json.dumps(metric_data))
