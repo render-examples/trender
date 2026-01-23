@@ -330,6 +330,13 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'render_yaml_content': render_data.get('render_yaml_content'),
         **render_data
     }
+    
+    # Parse ISO datetime strings to datetime objects for PostgreSQL
+    from dateutil import parser as date_parser
+    if isinstance(enriched['created_at'], str):
+        enriched['created_at'] = date_parser.isoparse(enriched['created_at'])
+    if isinstance(enriched['updated_at'], str):
+        enriched['updated_at'] = date_parser.isoparse(enriched['updated_at'])
 
     # Calculate data quality score
     enriched['data_quality_score'] = calculate_data_quality_score(enriched)
