@@ -55,41 +55,58 @@ async def main_analysis_task() -> Dict:
     logger.info(f"Workflow started at {execution_start}")
 
     try:
-        # Spawn parallel language analysis tasks (they initialize their own connections)
-        language_tasks = [
-            fetch_language_repos(lang)
-            for lang in TARGET_LANGUAGES
-        ]
-        logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
+        if DEV_MODE:
+            # Development mode: Python only
+            logger.info("DEV_MODE enabled - running Python task only")
+            python_result = await fetch_language_repos('Python')
+            
+            execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
+            logger.info(f"Python task completed in {execution_time}s")
+            
+            return {
+                'repos_processed': len(python_result) if isinstance(python_result, list) else 0,
+                'execution_time': execution_time,
+                'languages': ['Python'],
+                'success': True,
+                'dev_mode': True
+            }
+        else:
+            # Production mode: Full pipeline
+            # Spawn parallel language analysis tasks (they initialize their own connections)
+            language_tasks = [
+                fetch_language_repos(lang)
+                for lang in TARGET_LANGUAGES
+            ]
+            logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
 
-        # Execute language analysis and Render ecosystem fetch in parallel
-        results = await asyncio.gather(
-            *language_tasks,
-            fetch_render_ecosystem(),
-            return_exceptions=True
-        )
+            # Execute language analysis and Render ecosystem fetch in parallel
+            results = await asyncio.gather(
+                *language_tasks,
+                fetch_render_ecosystem(),
+                return_exceptions=True
+            )
 
-        # Log results from parallel tasks
-        logger.info(f"Parallel tasks completed. Total results: {len(results)}")
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) FAILED: {type(result).__name__}: {str(result)}")
-                logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
-            else:
-                result_len = len(result) if isinstance(result, (list, dict)) else 'N/A'
-                logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
+            # Log results from parallel tasks
+            logger.info(f"Parallel tasks completed. Total results: {len(results)}")
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) FAILED: {type(result).__name__}: {str(result)}")
+                    logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
+                else:
+                    result_len = len(result) if isinstance(result, (list, dict)) else 'N/A'
+                    logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
-        # Aggregate and store final results
-        github_api, db_pool = await init_connections()
-        logger.info("Connections initialized for aggregation")
-        
-        final_result = await aggregate_results(results, db_pool, execution_start)
+            # Aggregate and store final results
+            github_api, db_pool = await init_connections()
+            logger.info("Connections initialized for aggregation")
+            
+            final_result = await aggregate_results(results, db_pool, execution_start)
 
-        # Store execution stats
-        execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
-        await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
+            # Store execution stats
+            execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
+            await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
 
-        return final_result
+            return final_result
     finally:
         # Cleanup if connections were initialized
         try:
