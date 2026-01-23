@@ -233,7 +233,14 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
     logger.info(f"analyze_repo_batch START: {len(repos)} repos")
     
     # Initialize connections for this independent task
-    github_api, db_pool = await init_connections()
+    try:
+        logger.info("Initializing connections...")
+        github_api, db_pool = await init_connections()
+        logger.info(f"Connections initialized successfully. Session: {github_api.session is not None}, Pool: {db_pool is not None}")
+    except Exception as e:
+        logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
+        logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        return []  # Return empty list if we can't even connect
     
     try:
         enriched_repos = []
@@ -328,7 +335,9 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     enriched['data_quality_score'] = calculate_data_quality_score(enriched)
 
     # Store in staging layer
+    logger.info(f"Storing {enriched['repo_full_name']} to staging (quality: {enriched['data_quality_score']})")
     await store_in_staging(enriched, db_pool)
+    logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
 
     return enriched
 
