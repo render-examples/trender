@@ -354,30 +354,80 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
 async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
     """Store enriched repository data in staging layer."""
     async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO stg_repos_validated
-                (repo_full_name, repo_url, language, description, stars, forks,
-                 open_issues, created_at, updated_at, commits_last_7_days,
-                 issues_closed_last_7_days, active_contributors, uses_render,
-                 render_yaml_content, data_quality_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            ON CONFLICT (repo_full_name) DO UPDATE SET
-                stars = EXCLUDED.stars,
-                forks = EXCLUDED.forks,
-                open_issues = EXCLUDED.open_issues,
-                updated_at = EXCLUDED.updated_at,
-                commits_last_7_days = EXCLUDED.commits_last_7_days,
-                issues_closed_last_7_days = EXCLUDED.issues_closed_last_7_days,
-                active_contributors = EXCLUDED.active_contributors,
-                uses_render = EXCLUDED.uses_render,
-                data_quality_score = EXCLUDED.data_quality_score,
-                loaded_at = NOW()
-        """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
-            repo.get('description'), repo.get('stars', 0), repo.get('forks', 0),
-            repo.get('open_issues', 0), repo.get('created_at'), repo.get('updated_at'),
-            repo.get('commits_last_7_days', 0), repo.get('issues_closed_last_7_days', 0),
-            repo.get('active_contributors', 0), repo.get('uses_render', False),
-            repo.get('render_yaml_content'), repo.get('data_quality_score', 0.0))
+        # #region agent log
+        import json
+        with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:356","message":"store_in_staging ENTRY","data":{"repo_full_name":repo.get('repo_full_name'),"has_pool":db_pool is not None},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B,C,D,E"})+'\n')
+        # #endregion
+        
+        # #region agent log
+        # Check if table exists (Hypothesis B)
+        table_exists = await conn.fetchval("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'stg_repos_validated')")
+        with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:363","message":"Table existence check","data":{"table_exists":table_exists},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+'\n')
+        # #endregion
+        
+        # #region agent log
+        # Check table columns (Hypothesis C)
+        columns = await conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'stg_repos_validated' ORDER BY ordinal_position")
+        column_names = [col['column_name'] for col in columns]
+        with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:370","message":"Table columns","data":{"columns":column_names,"has_repo_full_name":'repo_full_name' in column_names},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+'\n')
+        # #endregion
+        
+        # #region agent log
+        # Check constraints on table (Hypothesis A, D)
+        constraints = await conn.fetch("""
+            SELECT conname, contype, pg_get_constraintdef(oid) as definition
+            FROM pg_constraint
+            WHERE conrelid = 'stg_repos_validated'::regclass
+        """)
+        constraint_list = [{"name":c['conname'],"type":c['contype'],"definition":c['definition']} for c in constraints]
+        with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:381","message":"Table constraints","data":{"constraints":constraint_list,"constraint_count":len(constraint_list)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A,D"})+'\n')
+        # #endregion
+        
+        try:
+            # #region agent log
+            with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:387","message":"BEFORE INSERT attempt","data":{"repo_full_name":repo.get('repo_full_name')},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+'\n')
+            # #endregion
+            
+            await conn.execute("""
+                INSERT INTO stg_repos_validated
+                    (repo_full_name, repo_url, language, description, stars, forks,
+                     open_issues, created_at, updated_at, commits_last_7_days,
+                     issues_closed_last_7_days, active_contributors, uses_render,
+                     render_yaml_content, data_quality_score)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                ON CONFLICT (repo_full_name) DO UPDATE SET
+                    stars = EXCLUDED.stars,
+                    forks = EXCLUDED.forks,
+                    open_issues = EXCLUDED.open_issues,
+                    updated_at = EXCLUDED.updated_at,
+                    commits_last_7_days = EXCLUDED.commits_last_7_days,
+                    issues_closed_last_7_days = EXCLUDED.issues_closed_last_7_days,
+                    active_contributors = EXCLUDED.active_contributors,
+                    uses_render = EXCLUDED.uses_render,
+                    data_quality_score = EXCLUDED.data_quality_score,
+                    loaded_at = NOW()
+            """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
+                repo.get('description'), repo.get('stars', 0), repo.get('forks', 0),
+                repo.get('open_issues', 0), repo.get('created_at'), repo.get('updated_at'),
+                repo.get('commits_last_7_days', 0), repo.get('issues_closed_last_7_days', 0),
+                repo.get('active_contributors', 0), repo.get('uses_render', False),
+                repo.get('render_yaml_content'), repo.get('data_quality_score', 0.0))
+            
+            # #region agent log
+            with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:416","message":"INSERT SUCCESS","data":{"repo_full_name":repo.get('repo_full_name')},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+'\n')
+            # #endregion
+        except Exception as e:
+            # #region agent log
+            with open('/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:422","message":"INSERT FAILED","data":{"repo_full_name":repo.get('repo_full_name'),"error_type":type(e).__name__,"error_msg":str(e)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B,C"})+'\n')
+            # #endregion
+            raise
 
 
 @task
