@@ -352,8 +352,8 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
                 (repo_full_name, repo_url, language, description, stars, forks,
                  open_issues, created_at, updated_at, commits_last_7_days,
                  issues_closed_last_7_days, active_contributors, uses_render,
-                 render_yaml_content, data_quality_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                 render_yaml_content, readme_content, data_quality_score)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             ON CONFLICT (repo_full_name) DO UPDATE SET
                 stars = EXCLUDED.stars,
                 forks = EXCLUDED.forks,
@@ -363,6 +363,7 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
                 issues_closed_last_7_days = EXCLUDED.issues_closed_last_7_days,
                 active_contributors = EXCLUDED.active_contributors,
                 uses_render = EXCLUDED.uses_render,
+                readme_content = EXCLUDED.readme_content,
                 data_quality_score = EXCLUDED.data_quality_score,
                 loaded_at = NOW()
         """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
@@ -370,7 +371,7 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
             repo.get('open_issues', 0), repo.get('created_at'), repo.get('updated_at'),
             repo.get('commits_last_7_days', 0), repo.get('issues_closed_last_7_days', 0),
             repo.get('active_contributors', 0), repo.get('uses_render', False),
-            repo.get('render_yaml_content'), repo.get('data_quality_score', 0.0))
+            repo.get('render_yaml_content'), repo.get('readme_content'), repo.get('data_quality_score', 0.0))
 
 
 @task
@@ -468,6 +469,17 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
         # Load to analytics (consolidated logic)
         await load_to_analytics_simple(repos, conn)
         
+        # region agent log
+        lang_counts_analytics = await conn.fetch("""
+            SELECT language, COUNT(*) as count 
+            FROM dim_repositories 
+            WHERE is_current = TRUE 
+            GROUP BY language
+        """)
+        lang_dict = {row['language']: row['count'] for row in lang_counts_analytics}
+        logger.info(f"[DEBUG-B,D] Final analytics table state: dim_repositories={lang_dict}")
+        # endregion
+        
         return {
             'repos_processed': len(repos),
             'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
@@ -477,63 +489,157 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
 
 async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
     """
-    Simplified load: upsert dimensions and facts without complex rankings.
+    Simplified load: upsert dimensions and facts with star-recency scoring.
+    
+    Scoring formula:
+    - 50% normalized star count
+    - 50% recency score (based on repo creation date within last 3 months)
     
     Args:
         repos: List of repository records from staging
         conn: Database connection
     """
+    # region agent log
+    lang_counts = {}
+    for r in repos:
+        lang_counts[r.get('language', 'NULL')] = lang_counts.get(r.get('language', 'NULL'), 0) + 1
+    logger.info(f"[DEBUG-A] load_to_analytics_simple ENTRY: total_repos={len(repos)}, lang_breakdown={lang_counts}")
+    # endregion
+    
     today = date.today()
+    now = datetime.now(timezone.utc)
+    
+    # region agent log
+    successful_loads = {'Python': 0, 'TypeScript': 0, 'Go': 0, 'Other': 0}
+    failed_loads = {'Python': 0, 'TypeScript': 0, 'Go': 0, 'Other': 0}
+    # endregion
+    
+    # Calculate max stars for normalization (separately for general and Render repos)
+    general_repos = [r for r in repos if not r.get('uses_render', False)]
+    render_repos = [r for r in repos if r.get('uses_render', False)]
+    
+    max_stars_general = max([r.get('stars', 1) for r in general_repos]) if general_repos else 1
+    max_stars_render = max([r.get('stars', 1) for r in render_repos]) if render_repos else 1
+    
+    logger.info(f"Max stars - General: {max_stars_general}, Render: {max_stars_render}")
+    
+    def calculate_recency_score(created_at) -> float:
+        """Calculate recency score based on repo age."""
+        if not created_at:
+            return 0.0
+        
+        # Ensure created_at is timezone-aware
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        elif created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        
+        age_days = (now - created_at).days
+        
+        if age_days <= 30:
+            return 1.0
+        elif age_days <= 60:
+            return 0.75
+        elif age_days <= 90:
+            return 0.5
+        else:
+            return 0.0
     
     for idx, repo in enumerate(repos, 1):
         repo_name = repo['repo_full_name']
         if not repo_name:
             continue
         
-        # Upsert into dim_repositories (simplified, no SCD Type 2)
-        await conn.execute("""
-            INSERT INTO dim_repositories
-                (repo_full_name, repo_url, description, readme_content, language, 
-                 created_at, uses_render, render_category, valid_from, is_current)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
-            ON CONFLICT (repo_full_name) 
-            WHERE is_current = TRUE
-            DO UPDATE SET
-                repo_url = EXCLUDED.repo_url,
-                description = EXCLUDED.description,
-                readme_content = EXCLUDED.readme_content,
-                uses_render = EXCLUDED.uses_render
-        """, repo_name, repo['repo_url'], repo['description'],
-            repo['readme_content'], repo['language'], repo['created_at'],
-            repo['uses_render'], 'community')
+        # region agent log
+        repo_lang = repo.get('language', 'NULL')
+        # endregion
         
-        # Get keys for fact table
-        repo_key = await conn.fetchval("""
-            SELECT repo_key FROM dim_repositories
-            WHERE repo_full_name = $1 AND is_current = TRUE
-        """, repo_name)
-        
-        language_key = await conn.fetchval("""
-            SELECT language_key FROM dim_languages
-            WHERE language_name = $1
-        """, repo['language'])
-        
-        if not repo_key or not language_key:
+        try:
+            # Upsert into dim_repositories (simplified, no SCD Type 2)
+            await conn.execute("""
+                INSERT INTO dim_repositories
+                    (repo_full_name, repo_url, description, readme_content, language, 
+                     created_at, uses_render, render_category, valid_from, is_current)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
+                ON CONFLICT (repo_full_name) 
+                WHERE is_current = TRUE
+                DO UPDATE SET
+                    repo_url = EXCLUDED.repo_url,
+                    description = EXCLUDED.description,
+                    readme_content = EXCLUDED.readme_content,
+                    uses_render = EXCLUDED.uses_render
+            """, repo_name, repo['repo_url'], repo['description'],
+                repo['readme_content'], repo['language'], repo['created_at'],
+                repo['uses_render'], 'community')
+            
+            # Get keys for fact table
+            repo_key = await conn.fetchval("""
+                SELECT repo_key FROM dim_repositories
+                WHERE repo_full_name = $1 AND is_current = TRUE
+            """, repo_name)
+            
+            language_key = await conn.fetchval("""
+                SELECT language_key FROM dim_languages
+                WHERE language_name = $1
+            """, repo['language'])
+            
+            # region agent log
+            logger.info(f"[DEBUG-C] Key lookup: repo={repo_name}, lang={repo_lang}, repo_key={repo_key}, lang_key={language_key}")
+            # endregion
+            
+            if not repo_key or not language_key:
+                # region agent log
+                lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
+                failed_loads[lang_bucket] += 1
+                logger.warning(f"[DEBUG-A,C] SKIP: Missing key for repo={repo_name}, lang={repo_lang}, repo_key={repo_key}, lang_key={language_key}")
+                # endregion
+                continue
+            
+            # Calculate momentum score using star-recency formula
+            stars = repo.get('stars', 0)
+            uses_render = repo.get('uses_render', False)
+            
+            # Normalize stars based on appropriate max (general vs render)
+            max_stars = max_stars_render if uses_render else max_stars_general
+            normalized_stars = stars / max_stars if max_stars > 0 else 0.0
+            
+            # Calculate recency score
+            recency_score = calculate_recency_score(repo.get('created_at'))
+            
+            # Final momentum score: 50% stars + 50% recency
+            momentum_score = (normalized_stars * 0.5) + (recency_score * 0.5)
+            
+            logger.info(f"Score for {repo_name}: stars={stars}, norm_stars={normalized_stars:.3f}, recency={recency_score}, momentum={momentum_score:.3f}")
+            
+            # Insert fact snapshot with calculated momentum score
+            await conn.execute("""
+                INSERT INTO fact_repo_snapshots
+                    (repo_key, language_key, snapshot_date, stars, forks,
+                     star_velocity, activity_score, momentum_score,
+                     rank_overall, rank_in_language)
+                VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7, NULL)
+                ON CONFLICT (repo_key, snapshot_date) DO UPDATE SET
+                    stars = EXCLUDED.stars,
+                    forks = EXCLUDED.forks,
+                    momentum_score = EXCLUDED.momentum_score,
+                    rank_overall = EXCLUDED.rank_overall
+            """, repo_key, language_key, today, repo['stars'], repo['forks'], momentum_score, idx)
+            
+            # region agent log
+            lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
+            successful_loads[lang_bucket] += 1
+            # endregion
+        except Exception as e:
+            # region agent log
+            lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
+            failed_loads[lang_bucket] += 1
+            logger.error(f"[DEBUG-A,C] EXCEPTION loading repo={repo_name}, lang={repo_lang}: {type(e).__name__}: {e}")
+            # endregion
             continue
-        
-        # Insert fact snapshot (simple: just stars, rank by stars DESC)
-        await conn.execute("""
-            INSERT INTO fact_repo_snapshots
-                (repo_key, language_key, snapshot_date, stars, forks,
-                 star_velocity, activity_score, momentum_score,
-                 rank_overall, rank_in_language)
-            VALUES ($1, $2, $3, $4, $5, 0, 0, $4, $6, NULL)
-            ON CONFLICT (repo_key, snapshot_date) DO UPDATE SET
-                stars = EXCLUDED.stars,
-                forks = EXCLUDED.forks,
-                momentum_score = EXCLUDED.momentum_score,
-                rank_overall = EXCLUDED.rank_overall
-        """, repo_key, language_key, today, repo['stars'], repo['forks'], idx)
+    
+    # region agent log
+    logger.info(f"[DEBUG-A,B] load_to_analytics_simple EXIT: successful={successful_loads}, failed={failed_loads}, total={len(repos)}")
+    # endregion
     
     logger.info(f"Loaded {len(repos)} repos to analytics layer")
 
