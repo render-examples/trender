@@ -7,23 +7,23 @@ import TypingTagline from '@/components/TypingTagline'
 export const dynamic = 'force-dynamic'
 
 async function RenderRow() {
-  const repos = await getTopRepos(50, undefined, true)
-  return <ScrollableRow title="Render" repos={repos} />
+  const repos = await getTopRepos(25, undefined, true)
+  return <ScrollableRow title="Render" repos={repos} icon="/images/render_logomark.png" />
 }
 
 async function PythonRow() {
-  const repos = await getTopReposByLanguage('Python', 50)
-  return <ScrollableRow title="Python" repos={repos} />
+  const repos = await getTopReposByLanguage('Python', 25)
+  return <ScrollableRow title="Python" repos={repos} icon="/images/python.png" />
 }
 
 async function TypeScriptRow() {
-  const repos = await getTopReposByLanguage('TypeScript', 50)
-  return <ScrollableRow title="TypeScript" repos={repos} />
+  const repos = await getTopReposByLanguage('TypeScript', 25)
+  return <ScrollableRow title="TypeScript" repos={repos} icon="/images/typescript.png" />
 }
 
 async function GoRow() {
-  const repos = await getTopReposByLanguage('Go', 50)
-  return <ScrollableRow title="Go" repos={repos} />
+  const repos = await getTopReposByLanguage('Go', 25)
+  return <ScrollableRow title="Go" repos={repos} icon="/images/go.png" />
 }
 
 function RowSkeleton({ title }: { title: string }) {

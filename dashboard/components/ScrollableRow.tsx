@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import Image from 'next/image'
 import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
 import RepoCard from './RepoCard'
@@ -9,6 +10,7 @@ import LoadingSkeleton from './LoadingSkeleton'
 interface ScrollableRowProps {
   title: string
   repos: Repository[]
+  icon?: string
 }
 
 // Generate placeholder repos with lorem ipsum
@@ -55,7 +57,7 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
   }))
 }
 
-export default function ScrollableRow({ title, repos }: ScrollableRowProps) {
+export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   
   // Fill with placeholders if we have fewer than 50 repos
@@ -77,6 +79,15 @@ export default function ScrollableRow({ title, repos }: ScrollableRowProps) {
   return (
     <div className="mb-12 relative group">
       <div className="flex items-center gap-4 mb-6 px-8">
+        {icon && (
+          <Image 
+            src={icon} 
+            alt={`${title} icon`} 
+            width={32} 
+            height={32} 
+            className="flex-shrink-0"
+          />
+        )}
         <h2 className="text-2xl font-bold text-white">{title}</h2>
       </div>
       

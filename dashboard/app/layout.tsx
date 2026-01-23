@@ -5,6 +5,9 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Trender - GitHub Trending Analytics',
   description: 'Discover trending GitHub repositories powered by Render Workflows',
+  icons: {
+    icon: '/images/trend.png',
+  },
 }
 
 export default function RootLayout({
@@ -51,6 +54,37 @@ export default function RootLayout({
                 className="footer-link"
               >
                 GitHub
+              </a>
+            </p>
+            <p className="text-xs text-zinc-500 mt-2">
+              <a 
+                href="https://www.flaticon.com/free-icons/python" 
+                title="python icons"
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-zinc-400 transition-colors"
+              >
+                Python icons created by Freepik - Flaticon
+              </a>
+              {' • '}
+              <a 
+                href="https://www.flaticon.com/free-icons/typescript" 
+                title="typescript icons"
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-zinc-400 transition-colors"
+              >
+                Typescript icons created by Freepik - Flaticon
+              </a>
+              {' • '}
+              <a 
+                href="https://www.flaticon.com/free-icons/trend" 
+                title="trend icons"
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-zinc-400 transition-colors"
+              >
+                Trend icons created by Ferdinand - Flaticon
               </a>
             </p>
             <p className="footer-copyright">
