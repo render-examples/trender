@@ -28,6 +28,10 @@ services:
           property: connectionString
       - key: GITHUB_ACCESS_TOKEN
         sync: false
+      - key: DEV_MODE
+        value: true
+      - key: DEV_REPO_LIMIT
+        value: 5
 
   # Cron Job - Hourly Analysis Trigger
   - type: cron

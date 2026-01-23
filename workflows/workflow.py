@@ -32,6 +32,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Development mode - set to limit processing for faster iteration
+DEV_MODE = os.getenv('DEV_MODE', 'false').lower() == 'true'
+DEV_REPO_LIMIT = int(os.getenv('DEV_REPO_LIMIT', '10'))
+
 # Target languages for analysis
 TARGET_LANGUAGES = ['Python', 'TypeScript', 'Go']
 
@@ -127,22 +131,29 @@ async def fetch_language_repos(language: str) -> List[Dict]:
         if language == 'TypeScript':
             repos = await filter_nextjs_repos(repos, github_api, min_version=16)
 
-        # Fetch READMEs for all repos
+        # Apply DEV_MODE limits
+        repo_limit = DEV_REPO_LIMIT if DEV_MODE else 100
+        logger.info(f"Processing {repo_limit} repos (DEV_MODE={DEV_MODE})")
+
+        # Fetch READMEs in parallel (much faster!)
         readme_contents = {}
-        for repo in repos[:100]:  # Limit to top 100
-            try:
-                owner, name = repo.get('full_name', '/').split('/')
-                readme = await github_api.fetch_readme(owner, name)
-                if readme:
-                    readme_contents[repo.get('full_name')] = readme
-            except:
-                pass
+        readme_tasks = []
+        for repo in repos[:repo_limit]:
+            owner, name = repo.get('full_name', '/').split('/')
+            readme_tasks.append(github_api.fetch_readme(owner, name))
+        
+        readme_results = await asyncio.gather(*readme_tasks, return_exceptions=True)
+        for i, repo in enumerate(repos[:repo_limit]):
+            if not isinstance(readme_results[i], Exception) and readme_results[i]:
+                readme_contents[repo.get('full_name')] = readme_results[i]
+        
+        logger.info(f"Fetched {len(readme_contents)} READMEs for {language}")
         
         # Store raw API responses with READMEs
         await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
 
         # Spawn batch analysis tasks
-        batch_results = await analyze_repo_batch(repos[:100], github_api, db_pool)
+        batch_results = await analyze_repo_batch(repos[:repo_limit], github_api, db_pool)
         
         logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results)} results")
         return batch_results
