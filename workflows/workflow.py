@@ -55,20 +55,30 @@ async def main_analysis_task() -> Dict:
 
     try:
         if DEV_MODE:
-            # Development mode: Python only
+            # Development mode: Python only + ETL pipeline
             logger.info("DEV_MODE enabled - running Python task only")
             python_result = await fetch_language_repos('Python')
             
-            execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
-            logger.info(f"Python task completed in {execution_time}s")
+            logger.info("Python task completed, starting ETL pipeline")
             
-            return {
-                'repos_processed': len(python_result) if isinstance(python_result, list) else 0,
-                'execution_time': execution_time,
-                'languages': ['Python'],
-                'success': True,
-                'dev_mode': True
-            }
+            # Initialize connections for ETL pipeline
+            github_api, db_pool = await init_connections()
+            logger.info("Connections initialized for ETL pipeline")
+            
+            # Run ETL pipeline: Extract from staging → Transform → Load to analytics
+            final_result = await aggregate_results([python_result], db_pool, execution_start)
+            
+            # Store execution stats
+            execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
+            await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
+            
+            logger.info(f"DEV_MODE workflow completed in {execution_time}s")
+            
+            # Add dev_mode flag to result
+            final_result['dev_mode'] = True
+            final_result['languages'] = ['Python']
+            
+            return final_result
         else:
             # Production mode: Full pipeline
             # Spawn parallel language analysis tasks (they initialize their own connections)
