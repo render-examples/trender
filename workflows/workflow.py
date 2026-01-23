@@ -14,15 +14,16 @@ from typing import Dict, List
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from render_detection import (
-    detect_render_usage, categorize_render_project,
-    score_blueprint_quality, score_documentation,
-    store_render_enrichment
-)
-from etl import extract_from_staging, transform_and_rank, load_to_analytics
+from render_detection import detect_render_usage
 from etl.extract import store_raw_repos, store_raw_metrics
-from etl.transform import deduplicate_repos, chunk_list
 from etl.data_quality import calculate_data_quality_score
+
+
+# Helper functions
+def chunk_list(items: List, size: int) -> List[List]:
+    """Split a list into chunks of specified size."""
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
 
 # Configure logging
 logging.basicConfig(
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Development mode - set to limit processing for faster iteration
 DEV_MODE = os.getenv('DEV_MODE', 'false').lower() == 'true'
-DEV_REPO_LIMIT = int(os.getenv('DEV_REPO_LIMIT', '10'))
+DEV_REPO_LIMIT = int(os.getenv('DEV_REPO_LIMIT', '50'))
 
 # Target languages for analysis
 TARGET_LANGUAGES = ['Python', 'TypeScript', 'Go']
@@ -68,10 +69,7 @@ async def main_analysis_task() -> Dict:
             # Run ETL pipeline: Extract from staging → Transform → Load to analytics
             final_result = await aggregate_results([python_result], db_pool, execution_start)
             
-            # Store execution stats
             execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
-            await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
-            
             logger.info(f"DEV_MODE workflow completed in {execution_time}s")
             
             # Add dev_mode flag to result
@@ -88,10 +86,10 @@ async def main_analysis_task() -> Dict:
             ]
             logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
 
-            # Execute language analysis and Render ecosystem fetch in parallel
+            # Execute language analysis and Render repos fetch in parallel
             results = await asyncio.gather(
                 *language_tasks,
-                fetch_render_ecosystem(),
+                fetch_render_repos(),
                 return_exceptions=True
             )
 
@@ -111,16 +109,12 @@ async def main_analysis_task() -> Dict:
             
             final_result = await aggregate_results(results, db_pool, execution_start)
 
-            # Store execution stats
-            execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
-            await store_execution_stats(execution_time, final_result.get('repos_processed', 0), db_pool)
-
             return final_result
     finally:
         # Cleanup if connections were initialized
         try:
             await cleanup_connections(github_api, db_pool)
-        except:
+        except Exception:
             pass  # Connections may not have been initialized if error occurred early
 
 
@@ -153,12 +147,8 @@ async def fetch_language_repos(language: str) -> List[Dict]:
             logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
             raise
 
-        # TypeScript-specific filtering for Next.js >= 16
-        if language == 'TypeScript':
-            repos = await filter_nextjs_repos(repos, github_api, min_version=16)
-
         # Apply DEV_MODE limits
-        repo_limit = DEV_REPO_LIMIT if DEV_MODE else 100
+        repo_limit = DEV_REPO_LIMIT if DEV_MODE else 50
         logger.info(f"Processing {repo_limit} repos (DEV_MODE={DEV_MODE})")
 
         # Fetch READMEs in parallel (much faster!)
@@ -186,61 +176,6 @@ async def fetch_language_repos(language: str) -> List[Dict]:
     finally:
         # Cleanup connections
         await cleanup_connections(github_api, db_pool)
-
-
-async def filter_nextjs_repos(repos: List[Dict], github_api: GitHubAPIClient,
-                              min_version: int = 16) -> List[Dict]:
-    """
-    Filter TypeScript repos for Next.js >= specified version.
-
-    Args:
-        repos: List of repository dictionaries
-        github_api: GitHub API client
-        min_version: Minimum Next.js version
-
-    Returns:
-        Filtered list of repositories
-    """
-    filtered = []
-
-    for repo in repos:
-        try:
-            owner, name = repo.get('full_name', '/').split('/')
-            package_json = await github_api.get_file_contents(owner, name, 'package.json')
-
-            if package_json:
-                import json
-                package_data = json.loads(package_json)
-
-                # Check dependencies and devDependencies
-                next_version = None
-                deps = package_data.get('dependencies', {})
-                dev_deps = package_data.get('devDependencies', {})
-
-                if 'next' in deps:
-                    next_version = deps['next']
-                elif 'next' in dev_deps:
-                    next_version = dev_deps['next']
-
-                if next_version:
-                    # Extract major version number
-                    import re
-                    version_match = re.search(r'(\d+)\.', next_version)
-                    if version_match:
-                        major_version = int(version_match.group(1))
-                        if major_version >= min_version:
-                            filtered.append(repo)
-                else:
-                    # Include if no Next.js found (might be other TS project)
-                    filtered.append(repo)
-            else:
-                # Include if no package.json found
-                filtered.append(repo)
-        except:
-            # Include on error to avoid losing data
-            filtered.append(repo)
-
-    return filtered
 
 
 @task
@@ -287,7 +222,7 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
                     repo_name = batch[i].get('full_name', 'unknown')
                     logger.error(f"Failed to analyze {repo_name}: {type(result).__name__}: {str(result)}")
                     logger.error(f"Full traceback: {''.join(traceback.format_exception(type(result), result, result.__traceback__))}")
-                else:
+                elif result is not None:
                     enriched_repos.append(result)
 
         logger.info(f"analyze_repo_batch END: {len(enriched_repos)} enriched")
@@ -310,7 +245,13 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     Returns:
         Enriched repository dictionary
     """
-    owner, name = repo.get('full_name', '/').split('/')
+    # Validate repo_full_name exists
+    repo_full_name = repo.get('full_name')
+    if not repo_full_name or '/' not in repo_full_name:
+        logger.warning(f"Skipping repo with invalid full_name: {repo_full_name}")
+        return None
+    
+    owner, name = repo_full_name.split('/', 1)
 
     # Fetch detailed metrics
     since_date = datetime.now(timezone.utc) - timedelta(days=7)
@@ -411,159 +352,170 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
 
 
 @task
-async def fetch_render_ecosystem() -> List[Dict]:
+async def fetch_render_repos() -> List[Dict]:
     """
-    Fetch Render-related projects from multiple sources.
-
-    Returns:
-        List of analyzed Render project dictionaries
-    """
-    logger.info("fetch_render_ecosystem START")
+    Fetch NEW repos (created in last month) containing render.yaml, ordered by stars.
+    Focuses on fresh Render projects, not legacy ones.
     
-    # Initialize connections for this task
+    Returns:
+        List of repository dictionaries
+    """
+    logger.info("fetch_render_repos START - searching repos from last 30 days")
+    
+    # Initialize connections
     github_api, db_pool = await init_connections()
     
     try:
-        # Parallel fetch from multiple sources
-        results = await asyncio.gather(
-            github_api.get_org_repos('render-examples'),
-            github_api.get_org_repos('render'),
-            github_api.search_by_topic('render'),
-            github_api.search_by_topic('render-deploy'),
-            github_api.search_by_topic('render-blueprints'),
-            github_api.search_readme_mentions('render.com'),
-            return_exceptions=True
-        )
-
-        # Filter out exceptions and flatten
-        valid_results = [r for r in results if not isinstance(r, Exception)]
-
-        # Deduplicate and store
-        unique_repos = deduplicate_repos(valid_results)
-        await store_raw_repos(unique_repos, db_pool, source_type='render_ecosystem')
-
-        # Analyze Render-specific features (subtask initializes its own connections)
-        analyzed = await analyze_render_projects(unique_repos)
-
-        logger.info(f"fetch_render_ecosystem END, returning {len(analyzed)} results")
+        # Search for NEW repos with render.yaml file (last 30 days)
+        # Automatically filters by created date and sorts by stars
+        repos = await github_api.search_repos_with_file('render.yaml', limit=50)
+        logger.info(f"Found {len(repos)} recent repos with render.yaml")
+        
+        if not repos:
+            return []
+        
+        # Mark all as Render projects
+        for repo in repos:
+            repo['uses_render'] = True
+        
+        # Store in raw layer
+        await store_raw_repos(repos, db_pool, source_type='render')
+        
+        # Analyze batch (stores in staging)
+        analyzed = await analyze_repo_batch(repos)
+        
+        logger.info(f"fetch_render_repos END: {len(analyzed)} analyzed")
         return analyzed
+        
     finally:
-        # Cleanup connections
-        await cleanup_connections(github_api, db_pool)
-
-
-@task
-async def analyze_render_projects(render_repos: List[Dict]) -> List[Dict]:
-    """
-    Analyze Render-specific features and categorization.
-    
-    This task runs independently and initializes its own connections.
-
-    Args:
-        render_repos: List of Render repository dictionaries (JSON-serializable)
-
-    Returns:
-        List of enriched Render project dictionaries
-    """
-    logger.info(f"analyze_render_projects START: {len(render_repos)} repos")
-    
-    # Initialize connections for this independent task
-    github_api, db_pool = await init_connections()
-    
-    try:
-        enriched_projects = []
-
-        for repo in render_repos:
-            # Detect Render usage patterns
-            render_data = await detect_render_usage(repo, github_api, db_pool)
-
-            # Calculate Render-specific scores
-            repo['render_category'] = categorize_render_project(repo)
-            repo['blueprint_quality'] = score_blueprint_quality(render_data)
-            repo['documentation_score'] = score_documentation(repo, render_data)
-            repo['render_services'] = render_data.get('services', [])
-            repo['render_complexity_score'] = render_data.get('complexity_score', 0)
-            repo['service_count'] = render_data.get('service_count', 0)
-            repo['uses_render'] = render_data.get('uses_render', False)
-
-            enriched_projects.append(repo)
-
-        # Store enrichment data
-        await store_render_enrichment(enriched_projects, db_pool)
-
-        logger.info(f"analyze_render_projects END: {len(enriched_projects)} enriched")
-        return enriched_projects
-    finally:
-        # Cleanup connections
         await cleanup_connections(github_api, db_pool)
 
 
 async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                             execution_start: datetime) -> Dict:
     """
-    Execute ETL pipeline: Extract from staging → Transform → Load to analytics.
-
+    Simplified ETL: Extract from staging, order by stars, load to analytics.
+    
     Args:
         all_results: List of results from parallel tasks
         db_pool: Database connection pool
         execution_start: Workflow execution start time
-
+    
     Returns:
         Execution summary dictionary
     """
     logger.info("aggregate_results START")
     
-    # Count successful task results (just for logging)
+    # Count successful task results
     successful_tasks = sum(1 for r in all_results if not isinstance(r, Exception) and isinstance(r, list) and len(r) > 0)
     logger.info(f"Successful tasks: {successful_tasks}/{len(all_results)}")
-
-    # ETL Pipeline Execution
-    # All data is already stored in staging tables by individual tasks
-    # 1. Extract: Read from staging tables
-    staging_data = await extract_from_staging(db_pool)
-    logger.info(f"Extracted {len(staging_data)} repos from staging")
-
-    # 2. Transform: Calculate rankings and velocity metrics
-    ranked_repos = transform_and_rank(
-        staging_data,
-        overall_limit=100,
-        per_language_limit=50
-    )
-
-    # 3. Load: Upsert to analytics layer
-    await load_to_analytics(ranked_repos, db_pool)
-
-    return {
-        'repos_processed': len(staging_data),
-        'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
-        'languages': TARGET_LANGUAGES,
-        'success': True
-    }
-
-
-async def store_execution_stats(duration: float, repos_count: int,
-                                db_pool: asyncpg.Pool) -> None:
-    """
-    Record workflow performance metrics.
-
-    Args:
-        duration: Execution duration in seconds
-        repos_count: Number of repositories processed
-        db_pool: Database connection pool
-    """
-    # Calculate parallel speedup (3 languages in parallel vs sequential)
-    estimated_sequential = duration * 3
-    parallel_speedup = estimated_sequential / duration if duration > 0 else 1.0
-
+    
     async with db_pool.acquire() as conn:
+        # Extract repos created in past 2 weeks from staging
+        two_weeks_ago = datetime.now(timezone.utc) - timedelta(days=14)
+        
+        repos = await conn.fetch("""
+            SELECT
+                srv.repo_full_name,
+                srv.repo_url,
+                srv.language,
+                srv.description,
+                srv.stars,
+                srv.forks,
+                srv.open_issues,
+                srv.created_at,
+                srv.updated_at,
+                srv.uses_render,
+                srv.readme_content,
+                srv.data_quality_score
+            FROM stg_repos_validated srv
+            WHERE srv.data_quality_score >= 0.70
+                AND srv.created_at >= $1
+            ORDER BY srv.stars DESC
+            LIMIT 100
+        """, two_weeks_ago)
+        
+        logger.info(f"Extracted {len(repos)} recent repos from staging")
+        
+        if not repos:
+            logger.warning("No repos found in staging for analytics")
+            return {
+                'repos_processed': 0,
+                'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
+                'success': True
+            }
+        
+        # Load to analytics (consolidated logic)
+        await load_to_analytics_simple(repos, conn)
+        
+        return {
+            'repos_processed': len(repos),
+            'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
+            'success': True
+        }
+
+
+async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
+    """
+    Simplified load: upsert dimensions and facts without complex rankings.
+    
+    Args:
+        repos: List of repository records from staging
+        conn: Database connection
+    """
+    today = date.today()
+    
+    for idx, repo in enumerate(repos, 1):
+        repo_name = repo['repo_full_name']
+        if not repo_name:
+            continue
+        
+        # Upsert into dim_repositories (simplified, no SCD Type 2)
         await conn.execute("""
-            INSERT INTO fact_workflow_executions
-                (execution_date, total_duration_seconds, repos_processed,
-                 tasks_executed, tasks_succeeded, parallel_speedup_factor,
-                 languages_processed, success_rate)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, datetime.now(timezone.utc), duration, repos_count, 9, 9,
-            parallel_speedup, TARGET_LANGUAGES, 1.0)
+            INSERT INTO dim_repositories
+                (repo_full_name, repo_url, description, readme_content, language, 
+                 created_at, uses_render, render_category, valid_from, is_current)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
+            ON CONFLICT (repo_full_name) 
+            WHERE is_current = TRUE
+            DO UPDATE SET
+                repo_url = EXCLUDED.repo_url,
+                description = EXCLUDED.description,
+                readme_content = EXCLUDED.readme_content,
+                uses_render = EXCLUDED.uses_render
+        """, repo_name, repo['repo_url'], repo['description'],
+            repo['readme_content'], repo['language'], repo['created_at'],
+            repo['uses_render'], 'community')
+        
+        # Get keys for fact table
+        repo_key = await conn.fetchval("""
+            SELECT repo_key FROM dim_repositories
+            WHERE repo_full_name = $1 AND is_current = TRUE
+        """, repo_name)
+        
+        language_key = await conn.fetchval("""
+            SELECT language_key FROM dim_languages
+            WHERE language_name = $1
+        """, repo['language'])
+        
+        if not repo_key or not language_key:
+            continue
+        
+        # Insert fact snapshot (simple: just stars, rank by stars DESC)
+        await conn.execute("""
+            INSERT INTO fact_repo_snapshots
+                (repo_key, language_key, snapshot_date, stars, forks,
+                 star_velocity, activity_score, momentum_score,
+                 rank_overall, rank_in_language)
+            VALUES ($1, $2, $3, $4, $5, 0, 0, $4, $6, NULL)
+            ON CONFLICT (repo_key, snapshot_date) DO UPDATE SET
+                stars = EXCLUDED.stars,
+                forks = EXCLUDED.forks,
+                momentum_score = EXCLUDED.momentum_score,
+                rank_overall = EXCLUDED.rank_overall
+        """, repo_key, language_key, today, repo['stars'], repo['forks'], idx)
+    
+    logger.info(f"Loaded {len(repos)} repos to analytics layer")
 
 
 if __name__ == "__main__":

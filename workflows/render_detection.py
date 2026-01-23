@@ -235,42 +235,23 @@ def score_documentation(repo_data: Dict, render_data: Dict) -> int:
 
 async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
     """
-    Detect Render usage patterns in a repository (to be used as @task).
-
+    Simplified: just return if repo already marked as uses_render.
+    For non-Render repos, return False without checking.
+    
     Args:
         repo_data: Repository data dictionary
-        github_api: GitHub API client
-        db_pool: Database pool (unused here, for consistency)
-
+        github_api: GitHub API client (unused)
+        db_pool: Database pool (unused)
+    
     Returns:
         Dictionary with Render usage detection results
     """
-    owner, name = repo_data.get('full_name', '/').split('/')
-
-    # Check for render.yaml
-    render_yaml = await github_api.get_file_contents(owner, name, 'render.yaml')
-
-    # Parse configuration
-    render_config = {}
-    if render_yaml:
-        render_config = parse_render_yaml(render_yaml)
-
-    # Check Dockerfile for Render patterns
-    dockerfile = await github_api.get_file_contents(owner, name, 'Dockerfile')
-    docker_patterns = scan_dockerfile_for_render(dockerfile) if dockerfile else {}
-
-    # Calculate complexity score
-    complexity = calculate_render_complexity(render_config, docker_patterns)
-
-    return {
-        'uses_render': bool(render_yaml),
-        'render_yaml_content': render_yaml,
-        'services': render_config.get('services', []),
-        'databases': render_config.get('databases', []),
-        'service_count': render_config.get('service_count', 0),
-        'complexity_score': complexity,
-        **docker_patterns
-    }
+    # If already marked as Render project (from search), return True
+    if repo_data.get('uses_render'):
+        return {'uses_render': True}
+    
+    # Otherwise, don't waste API calls checking
+    return {'uses_render': False}
 
 
 async def store_render_enrichment(enriched_projects: List[Dict], db_pool):

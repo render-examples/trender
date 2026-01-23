@@ -69,6 +69,8 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
     async with db_pool.acquire() as conn:
         for repo in repos:
             repo_name = repo.get('full_name', '')
+            if not repo_name:
+                continue
             readme = readme_contents.get(repo_name) if readme_contents else None
             
             await conn.execute("""

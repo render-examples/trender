@@ -6,8 +6,12 @@ Async GitHub API client with rate limiting and retry logic.
 import aiohttp
 import asyncio
 import base64
-from datetime import datetime, timezone
+import json
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubAPIClient:
@@ -50,37 +54,68 @@ class GitHubAPIClient:
     async def _api_call(self, url: str, retry_count: int = 3) -> dict:
         """
         Make API call with rate limiting and retry logic.
-
-        Args:
-            url: The API endpoint URL
-            retry_count: Number of retries on failure
-
+        
         Returns:
-            JSON response from the API
+            JSON response or None if error
         """
         # Check rate limit
         if self.rate_limit_remaining < 100:
             if self.rate_limit_reset:
                 sleep_duration = max(self.rate_limit_reset - datetime.now(timezone.utc).timestamp(), 0)
-                await asyncio.sleep(sleep_duration + 5)
-
+                if sleep_duration > 0:
+                    logger.warning(f"Rate limit low, sleeping {sleep_duration}s")
+                    await asyncio.sleep(sleep_duration + 5)
+        
         for attempt in range(retry_count):
             try:
-                async with self.session.get(url) as response:
+                async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     # Update rate limit info
                     self.rate_limit_remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
                     self.rate_limit_reset = int(response.headers.get('X-RateLimit-Reset', 0))
-
+                    
+                    # Handle specific status codes
                     if response.status == 404:
                         return None
-
+                    elif response.status == 403:
+                        error_msg = await response.text()
+                        if 'rate limit' in error_msg.lower():
+                            logger.error("GitHub rate limit exceeded")
+                            return None
+                        elif 'insufficient' in error_msg.lower():
+                            logger.error("GitHub token has insufficient scopes")
+                            return None
+                        raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
+                    elif response.status == 422:
+                        logger.error(f"GitHub API invalid query: {url}")
+                        return None
+                    elif response.status == 503:
+                        logger.warning("GitHub API temporarily unavailable (503)")
+                        if attempt < retry_count - 1:
+                            await asyncio.sleep(5)
+                            continue
+                        return None
+                    
                     response.raise_for_status()
-                    return await response.json()
+                    
+                    try:
+                        return await response.json()
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse GitHub API JSON response")
+                        return None
+                        
+            except asyncio.TimeoutError:
+                logger.warning(f"GitHub API timeout (attempt {attempt + 1}/{retry_count})")
+                if attempt < retry_count - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return None
             except aiohttp.ClientError as e:
-                if attempt == retry_count - 1:
-                    raise
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
-
+                logger.warning(f"GitHub API error: {e} (attempt {attempt + 1}/{retry_count})")
+                if attempt < retry_count - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return None
+        
         return None
 
     async def search_repositories(self, language: str, sort: str = 'stars',
@@ -100,7 +135,7 @@ class GitHubAPIClient:
         if updated_since:
             query += f" pushed:>={updated_since.strftime('%Y-%m-%d')}"
 
-        url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page=100"
+        url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page=50"
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
@@ -192,24 +227,48 @@ class GitHubAPIClient:
 
     async def fetch_readme(self, owner: str, repo: str) -> Optional[str]:
         """
-        Fetch README content from repository.
-        Tries common README filenames (README.md, README.rst, README.txt, README).
-
+        Fetch README.md content (case insensitive), return first 80 words only.
+        
         Args:
             owner: Repository owner
             repo: Repository name
-
+        
         Returns:
-            README content as string, or None if not found
+            First 80 words of README, or None if not found
         """
-        readme_filenames = ['README.md', 'readme.md', 'README.rst', 'README.txt', 'README']
-        
-        for filename in readme_filenames:
-            content = await self.get_file_contents(owner, repo, filename)
-            if content:
-                return content
-        
-        return None
+        try:
+            url = f"{self.base_url}/repos/{owner}/{repo}/contents/"
+            result = await self._api_call(url)
+            
+            if not result or not isinstance(result, list):
+                return None
+            
+            # Find readme.md (case insensitive)
+            readme_file = None
+            for file in result:
+                if file.get('name', '').lower() == 'readme.md':
+                    readme_file = file
+                    break
+            
+            if not readme_file:
+                return None
+            
+            # Fetch content
+            content_url = readme_file.get('download_url')
+            if not content_url:
+                return None
+            
+            async with self.session.get(content_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    # Return first 80 words
+                    words = text.split()[:80]
+                    return ' '.join(words)
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to fetch README for {owner}/{repo}: {e}")
+            return None
 
     async def search_by_topic(self, topic: str) -> List[Dict]:
         """
@@ -221,7 +280,7 @@ class GitHubAPIClient:
         Returns:
             List of repository data dictionaries
         """
-        url = f"{self.base_url}/search/repositories?q=topic:{topic}&per_page=100"
+        url = f"{self.base_url}/search/repositories?q=topic:{topic}&per_page=50"
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
@@ -235,9 +294,56 @@ class GitHubAPIClient:
         Returns:
             List of search result dictionaries
         """
-        url = f"{self.base_url}/search/code?q={keyword}+in:readme&per_page=100"
+        url = f"{self.base_url}/search/code?q={keyword}+in:readme&per_page=50"
         result = await self._api_call(url)
         return result.get('items', []) if result else []
+
+    async def search_repos_with_file(self, filename: str, limit: int = 50, 
+                                      created_since: datetime = None) -> List[Dict]:
+        """
+        Search for repositories containing a specific file, ordered by stars.
+        For Render detection: searches only repos created in the last month.
+        
+        Args:
+            filename: Filename to search for (e.g., 'render.yaml')
+            limit: Maximum number of results
+            created_since: Only include repos created after this date (default: 1 month ago)
+        
+        Returns:
+            List of repository data dictionaries ordered by stars descending
+        """
+        # Default to last month for fresh Render projects
+        if not created_since:
+            created_since = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        # Format date for GitHub search
+        created_date = created_since.strftime('%Y-%m-%d')
+        
+        # GitHub code search: filename:render.yaml created:>=YYYY-MM-DD
+        # Then we'll sort repos by stars manually since code search doesn't sort by repo stars
+        url = f"{self.base_url}/search/code?q=filename:{filename}+created:>={created_date}&per_page=100"
+        result = await self._api_call(url)
+        
+        if not result or 'items' not in result:
+            return []
+        
+        # Extract unique repositories from code search results
+        seen_repos = set()
+        repos = []
+        
+        for item in result['items']:
+            repo_data = item.get('repository', {})
+            repo_full_name = repo_data.get('full_name')
+            
+            if repo_full_name and repo_full_name not in seen_repos:
+                seen_repos.add(repo_full_name)
+                repos.append(repo_data)
+        
+        # Sort by stars descending (most to least)
+        repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
+        
+        # Return top N
+        return repos[:limit]
 
     async def get_org_repos(self, org: str) -> List[Dict]:
         """
@@ -249,6 +355,6 @@ class GitHubAPIClient:
         Returns:
             List of repository data dictionaries
         """
-        url = f"{self.base_url}/orgs/{org}/repos?per_page=100"
+        url = f"{self.base_url}/orgs/{org}/repos?per_page=50"
         result = await self._api_call(url)
         return result if isinstance(result, list) else []
