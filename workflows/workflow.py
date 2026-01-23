@@ -14,7 +14,6 @@ from typing import Dict, List
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from metrics import calculate_metrics
 from render_detection import (
     detect_render_usage, categorize_render_project,
     score_blueprint_quality, score_documentation,
@@ -364,7 +363,12 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     await store_in_staging(enriched, db_pool)
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
 
-    return enriched
+    # Return minimal summary (data is already in DB, no need to pass full objects)
+    return {
+        'repo_full_name': enriched['repo_full_name'],
+        'language': enriched['language'],
+        'stars': enriched['stars']
+    }
 
 
 async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
@@ -499,23 +503,15 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     """
     logger.info("aggregate_results START")
     
-    # Filter successful results (handle exceptions from gather)
-    language_results = [r for r in all_results[:3] if not isinstance(r, Exception)]
-    render_results = all_results[3] if len(all_results) > 3 and not isinstance(all_results[3], Exception) else []
-    
-    logger.info(f"Successful language tasks: {len(language_results)}/3")
-    logger.info(f"Render results: type={type(render_results).__name__}, is_list={isinstance(render_results, list)}")
-
-    # Combine and deduplicate
-    all_repos = deduplicate_repos(language_results + [render_results])
-    logger.info(f"After deduplication: {len(all_repos)} total unique repos")
-
-    # Calculate metrics for all repos
-    scored_repos = calculate_metrics(all_repos)
+    # Count successful task results (just for logging)
+    successful_tasks = sum(1 for r in all_results if not isinstance(r, Exception) and isinstance(r, list) and len(r) > 0)
+    logger.info(f"Successful tasks: {successful_tasks}/{len(all_results)}")
 
     # ETL Pipeline Execution
-    # 1. Extract: Read from staging tables (already stored)
+    # All data is already stored in staging tables by individual tasks
+    # 1. Extract: Read from staging tables
     staging_data = await extract_from_staging(db_pool)
+    logger.info(f"Extracted {len(staging_data)} repos from staging")
 
     # 2. Transform: Calculate rankings and velocity metrics
     ranked_repos = transform_and_rank(
@@ -528,7 +524,7 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     await load_to_analytics(ranked_repos, db_pool)
 
     return {
-        'repos_processed': len(all_repos),
+        'repos_processed': len(staging_data),
         'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
         'languages': TARGET_LANGUAGES,
         'success': True
