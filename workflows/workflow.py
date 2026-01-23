@@ -152,8 +152,8 @@ async def fetch_language_repos(language: str) -> List[Dict]:
         # Store raw API responses with READMEs
         await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
 
-        # Spawn batch analysis tasks
-        batch_results = await analyze_repo_batch(repos[:repo_limit], github_api, db_pool)
+        # Spawn batch analysis task (subtask initializes its own connections)
+        batch_results = await analyze_repo_batch(repos[:repo_limit])
         
         logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results)} results")
         return batch_results
@@ -218,35 +218,44 @@ async def filter_nextjs_repos(repos: List[Dict], github_api: GitHubAPIClient,
 
 
 @task
-async def analyze_repo_batch(repos: List[Dict], github_api: GitHubAPIClient,
-                             db_pool: asyncpg.Pool) -> List[Dict]:
+async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
     """
     Analyze a batch of repositories with detailed metrics.
+    
+    This task runs independently and initializes its own connections.
 
     Args:
-        repos: List of repository dictionaries
-        github_api: GitHub API client
-        db_pool: Database connection pool
+        repos: List of repository dictionaries (JSON-serializable)
 
     Returns:
         List of enriched repository dictionaries
     """
-    enriched_repos = []
+    logger.info(f"analyze_repo_batch START: {len(repos)} repos")
+    
+    # Initialize connections for this independent task
+    github_api, db_pool = await init_connections()
+    
+    try:
+        enriched_repos = []
 
-    # Process repos in batches of 10
-    for batch in chunk_list(repos, size=10):
-        batch_tasks = [
-            analyze_single_repo(repo, github_api, db_pool)
-            for repo in batch
-        ]
+        # Process repos in batches of 10
+        for batch in chunk_list(repos, size=10):
+            batch_tasks = [
+                analyze_single_repo(repo, github_api, db_pool)
+                for repo in batch
+            ]
 
-        # Gather with exceptions to continue on failures
-        batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            # Gather with exceptions to continue on failures
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
-        # Filter out exceptions and collect successful results
-        enriched_repos.extend([r for r in batch_results if not isinstance(r, Exception)])
+            # Filter out exceptions and collect successful results
+            enriched_repos.extend([r for r in batch_results if not isinstance(r, Exception)])
 
-    return enriched_repos
+        logger.info(f"analyze_repo_batch END: {len(enriched_repos)} enriched")
+        return enriched_repos
+    finally:
+        # Cleanup connections
+        await cleanup_connections(github_api, db_pool)
 
 
 async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
@@ -379,8 +388,8 @@ async def fetch_render_ecosystem() -> List[Dict]:
         unique_repos = deduplicate_repos(valid_results)
         await store_raw_repos(unique_repos, db_pool, source_type='render_ecosystem')
 
-        # Analyze Render-specific features
-        analyzed = await analyze_render_projects(unique_repos, github_api, db_pool)
+        # Analyze Render-specific features (subtask initializes its own connections)
+        analyzed = await analyze_render_projects(unique_repos)
 
         logger.info(f"fetch_render_ecosystem END, returning {len(analyzed)} results")
         return analyzed
@@ -390,41 +399,49 @@ async def fetch_render_ecosystem() -> List[Dict]:
 
 
 @task
-async def analyze_render_projects(render_repos: List[Dict],
-                                  github_api: GitHubAPIClient,
-                                  db_pool: asyncpg.Pool) -> List[Dict]:
+async def analyze_render_projects(render_repos: List[Dict]) -> List[Dict]:
     """
     Analyze Render-specific features and categorization.
+    
+    This task runs independently and initializes its own connections.
 
     Args:
-        render_repos: List of Render repository dictionaries
-        github_api: GitHub API client
-        db_pool: Database connection pool
+        render_repos: List of Render repository dictionaries (JSON-serializable)
 
     Returns:
         List of enriched Render project dictionaries
     """
-    enriched_projects = []
+    logger.info(f"analyze_render_projects START: {len(render_repos)} repos")
+    
+    # Initialize connections for this independent task
+    github_api, db_pool = await init_connections()
+    
+    try:
+        enriched_projects = []
 
-    for repo in render_repos:
-        # Detect Render usage patterns
-        render_data = await detect_render_usage(repo, github_api, db_pool)
+        for repo in render_repos:
+            # Detect Render usage patterns
+            render_data = await detect_render_usage(repo, github_api, db_pool)
 
-        # Calculate Render-specific scores
-        repo['render_category'] = categorize_render_project(repo)
-        repo['blueprint_quality'] = score_blueprint_quality(render_data)
-        repo['documentation_score'] = score_documentation(repo, render_data)
-        repo['render_services'] = render_data.get('services', [])
-        repo['render_complexity_score'] = render_data.get('complexity_score', 0)
-        repo['service_count'] = render_data.get('service_count', 0)
-        repo['uses_render'] = render_data.get('uses_render', False)
+            # Calculate Render-specific scores
+            repo['render_category'] = categorize_render_project(repo)
+            repo['blueprint_quality'] = score_blueprint_quality(render_data)
+            repo['documentation_score'] = score_documentation(repo, render_data)
+            repo['render_services'] = render_data.get('services', [])
+            repo['render_complexity_score'] = render_data.get('complexity_score', 0)
+            repo['service_count'] = render_data.get('service_count', 0)
+            repo['uses_render'] = render_data.get('uses_render', False)
 
-        enriched_projects.append(repo)
+            enriched_projects.append(repo)
 
-    # Store enrichment data
-    await store_render_enrichment(enriched_projects, db_pool)
+        # Store enrichment data
+        await store_render_enrichment(enriched_projects, db_pool)
 
-    return enriched_projects
+        logger.info(f"analyze_render_projects END: {len(enriched_projects)} enriched")
+        return enriched_projects
+    finally:
+        # Cleanup connections
+        await cleanup_connections(github_api, db_pool)
 
 
 async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
