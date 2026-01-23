@@ -14,12 +14,18 @@ CREATE TABLE IF NOT EXISTS raw_github_repos (
   CONSTRAINT valid_source_type CHECK (source_type IN ('trending', 'render_ecosystem'))
 );
 
--- Unique constraint to prevent exact duplicates within same workflow run
-CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_repos_unique ON raw_github_repos(repo_full_name, fetch_timestamp);
+-- Unique constraint to prevent duplicates - one row per repo (latest data)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'raw_github_repos_repo_unique'
+  ) THEN
+    ALTER TABLE raw_github_repos ADD CONSTRAINT raw_github_repos_repo_unique UNIQUE (repo_full_name);
+  END IF;
+END $$;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_raw_repos_fetch ON raw_github_repos(fetch_timestamp);
-CREATE INDEX IF NOT EXISTS idx_raw_repos_name ON raw_github_repos(repo_full_name);
 CREATE INDEX IF NOT EXISTS idx_raw_repos_source ON raw_github_repos(source_type, source_language);
 
 -- Table: raw_repo_metrics
@@ -33,9 +39,17 @@ CREATE TABLE IF NOT EXISTS raw_repo_metrics (
   CONSTRAINT valid_metric_type CHECK (metric_type IN ('commits', 'issues', 'contributors'))
 );
 
--- Unique constraint to prevent exact duplicates within same workflow run
-CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_metrics_unique ON raw_repo_metrics(repo_full_name, metric_type, fetch_timestamp);
+-- Unique constraint to prevent duplicates - one row per repo per metric type (latest data)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'raw_repo_metrics_unique'
+  ) THEN
+    ALTER TABLE raw_repo_metrics ADD CONSTRAINT raw_repo_metrics_unique UNIQUE (repo_full_name, metric_type);
+  END IF;
+END $$;
 
 -- Indexes for querying metrics
-CREATE INDEX IF NOT EXISTS idx_raw_metrics_repo ON raw_repo_metrics(repo_full_name, fetch_timestamp);
+CREATE INDEX IF NOT EXISTS idx_raw_metrics_repo ON raw_repo_metrics(repo_full_name);
 CREATE INDEX IF NOT EXISTS idx_raw_metrics_type ON raw_repo_metrics(metric_type);
+CREATE INDEX IF NOT EXISTS idx_raw_metrics_fetch ON raw_repo_metrics(fetch_timestamp);
