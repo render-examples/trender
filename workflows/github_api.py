@@ -301,8 +301,12 @@ class GitHubAPIClient:
     async def search_repos_with_file(self, filename: str, limit: int = 50, 
                                       created_since: datetime = None) -> List[Dict]:
         """
-        Search for repositories containing a specific file, ordered by stars.
-        For Render detection: searches only repos created in the last month.
+        Search for repositories containing a specific file, ordered by creation date.
+        For Render detection: searches repos with the file, then filters by creation date.
+        
+        Two-step approach:
+        1. Code search for filename (GitHub Code Search doesn't support created: qualifier)
+        2. Fetch full repo details to filter by creation date
         
         Args:
             filename: Filename to search for (e.g., 'render.yaml')
@@ -310,26 +314,27 @@ class GitHubAPIClient:
             created_since: Only include repos created after this date (default: 1 month ago)
         
         Returns:
-            List of repository data dictionaries ordered by stars descending
+            List of repository data dictionaries ordered by creation date descending
         """
         # Default to last month for fresh Render projects
         if not created_since:
             created_since = datetime.now(timezone.utc) - timedelta(days=30)
         
-        # Format date for GitHub search
-        created_date = created_since.strftime('%Y-%m-%d')
+        logger.info(f"Step 1: Searching code for filename:{filename}")
         
-        # GitHub code search: filename:render.yaml created:>=YYYY-MM-DD
-        # Then we'll sort repos by stars manually since code search doesn't sort by repo stars
-        url = f"{self.base_url}/search/code?q=filename:{filename}+created:>={created_date}&per_page=100"
+        # Step 1: Code search (without date filter - not supported by GitHub Code Search API)
+        url = f"{self.base_url}/search/code?q=filename:{filename}&per_page=100"
         result = await self._api_call(url)
         
         if not result or 'items' not in result:
+            logger.warning(f"Code search returned no results for {filename}")
             return []
         
-        # Extract unique repositories from code search results
+        logger.info(f"Code search found {len(result.get('items', []))} files")
+        
+        # Extract unique repository names from code search results
         seen_repos = set()
-        repos = []
+        repo_names = []
         
         for item in result['items']:
             repo_data = item.get('repository', {})
@@ -337,13 +342,46 @@ class GitHubAPIClient:
             
             if repo_full_name and repo_full_name not in seen_repos:
                 seen_repos.add(repo_full_name)
-                repos.append(repo_data)
+                repo_names.append(repo_full_name)
         
-        # Sort by stars descending (most to least)
-        repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
+        logger.info(f"Step 2: Fetching full details for {len(repo_names)} unique repos")
+        
+        # Step 2: Fetch full repo details to get accurate creation dates
+        repos_with_details = []
+        
+        for repo_full_name in repo_names:
+            if '/' not in repo_full_name:
+                continue
+                
+            owner, repo = repo_full_name.split('/', 1)
+            repo_details = await self.get_repo_details(owner, repo)
+            
+            if repo_details:
+                repos_with_details.append(repo_details)
+        
+        logger.info(f"Successfully fetched {len(repos_with_details)} repo details")
+        
+        # Filter by creation date
+        filtered_repos = []
+        for repo in repos_with_details:
+            created_at_str = repo.get('created_at')
+            if created_at_str:
+                try:
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    if created_at >= created_since:
+                        filtered_repos.append(repo)
+                except (ValueError, AttributeError):
+                    continue
+        
+        logger.info(f"Filtered to {len(filtered_repos)} repos created since {created_since.strftime('%Y-%m-%d')}")
+        
+        # Sort by creation date descending (newest first)
+        filtered_repos.sort(key=lambda r: r.get('created_at', ''), reverse=True)
         
         # Return top N
-        return repos[:limit]
+        result = filtered_repos[:limit]
+        logger.info(f"Returning top {len(result)} repos")
+        return result
 
     async def get_org_repos(self, org: str) -> List[Dict]:
         """

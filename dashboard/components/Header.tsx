@@ -18,7 +18,7 @@ export default function Header() {
             className="render-logo-link"
             aria-label="Visit Render.com"
           >
-            <span className="render-powered-text" data-mobile-text="DEPLOYED ON">POWERED BY AND DEPLOYED ON</span>
+            <span className="render-powered-text" data-mobile-text="DEPLOYED ON">DEPLOYED ON</span>
             <Image
               src="/images/render-logo.png"
               alt="Render"

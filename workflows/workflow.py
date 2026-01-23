@@ -411,9 +411,8 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     logger.info(f"Successful tasks: {successful_tasks}/{len(all_results)}")
     
     async with db_pool.acquire() as conn:
-        # Extract repos created in past 2 weeks from staging
-        two_weeks_ago = datetime.now(timezone.utc) - timedelta(days=14)
-        
+        # Extract all high-quality repos from staging (no date filtering)
+        # Pull top 50 per language = 150 total repos
         repos = await conn.fetch("""
             SELECT
                 srv.repo_full_name,
@@ -430,10 +429,9 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.data_quality_score
             FROM stg_repos_validated srv
             WHERE srv.data_quality_score >= 0.70
-                AND srv.created_at >= $1
             ORDER BY srv.stars DESC
-            LIMIT 100
-        """, two_weeks_ago)
+            LIMIT 150
+        """)
         
         logger.info(f"Extracted {len(repos)} recent repos from staging")
         
