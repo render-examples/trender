@@ -49,14 +49,11 @@ async def main_analysis_task() -> Dict:
     """
     execution_start = datetime.now(timezone.utc)
     logger.info(f"Workflow started at {execution_start}")
-    
-    github_api, db_pool = await init_connections()
-    logger.info(f"Connections initialized - github_api: {type(github_api).__name__}, db_pool: {type(db_pool).__name__}")
 
     try:
-        # Spawn parallel language analysis tasks
+        # Spawn parallel language analysis tasks (they initialize their own connections)
         language_tasks = [
-            fetch_language_repos(lang, github_api, db_pool)
+            fetch_language_repos(lang)
             for lang in TARGET_LANGUAGES
         ]
         logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
@@ -64,7 +61,7 @@ async def main_analysis_task() -> Dict:
         # Execute language analysis and Render ecosystem fetch in parallel
         results = await asyncio.gather(
             *language_tasks,
-            fetch_render_ecosystem(github_api, db_pool),
+            fetch_render_ecosystem(),
             return_exceptions=True
         )
 
@@ -73,12 +70,15 @@ async def main_analysis_task() -> Dict:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) FAILED: {type(result).__name__}: {str(result)}")
-                logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__())))
+                logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
             else:
                 result_len = len(result) if isinstance(result, (list, dict)) else 'N/A'
                 logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
         # Aggregate and store final results
+        github_api, db_pool = await init_connections()
+        logger.info("Connections initialized for aggregation")
+        
         final_result = await aggregate_results(results, db_pool, execution_start)
 
         # Store execution stats
@@ -87,59 +87,68 @@ async def main_analysis_task() -> Dict:
 
         return final_result
     finally:
-        await cleanup_connections(github_api, db_pool)
+        # Cleanup if connections were initialized
+        try:
+            await cleanup_connections(github_api, db_pool)
+        except:
+            pass  # Connections may not have been initialized if error occurred early
 
 
 @task
-async def fetch_language_repos(language: str, github_api: GitHubAPIClient,
-                               db_pool: asyncpg.Pool) -> List[Dict]:
+async def fetch_language_repos(language: str) -> List[Dict]:
     """
     Fetch and store trending repos for a specific language.
 
     Args:
         language: Programming language to fetch
-        github_api: GitHub API client
-        db_pool: Database connection pool
 
     Returns:
         List of enriched repository dictionaries
     """
     logger.info(f"fetch_language_repos START for {language}")
     
-    # Search GitHub API
-    try:
-        repos = await github_api.search_repositories(
-            language=language,
-            sort='stars',
-            updated_since=datetime.now(timezone.utc) - timedelta(days=30)
-        )
-        logger.info(f"GitHub API returned {len(repos)} repos for {language}")
-    except Exception as e:
-        logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
-        raise
-
-    # TypeScript-specific filtering for Next.js >= 16
-    if language == 'TypeScript':
-        repos = await filter_nextjs_repos(repos, github_api, min_version=16)
-
-    # Fetch READMEs for all repos
-    readme_contents = {}
-    for repo in repos[:100]:  # Limit to top 100
-        try:
-            owner, name = repo.get('full_name', '/').split('/')
-            readme = await github_api.fetch_readme(owner, name)
-            if readme:
-                readme_contents[repo.get('full_name')] = readme
-        except:
-            pass
+    # Initialize connections for this task
+    github_api, db_pool = await init_connections()
     
-    # Store raw API responses with READMEs
-    await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
+    try:
+        # Search GitHub API
+        try:
+            repos = await github_api.search_repositories(
+                language=language,
+                sort='stars',
+                updated_since=datetime.now(timezone.utc) - timedelta(days=30)
+            )
+            logger.info(f"GitHub API returned {len(repos)} repos for {language}")
+        except Exception as e:
+            logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
+            raise
 
-    # Spawn batch analysis tasks
-    batch_results = await analyze_repo_batch(repos[:100], github_api, db_pool)
+        # TypeScript-specific filtering for Next.js >= 16
+        if language == 'TypeScript':
+            repos = await filter_nextjs_repos(repos, github_api, min_version=16)
 
-    return batch_results
+        # Fetch READMEs for all repos
+        readme_contents = {}
+        for repo in repos[:100]:  # Limit to top 100
+            try:
+                owner, name = repo.get('full_name', '/').split('/')
+                readme = await github_api.fetch_readme(owner, name)
+                if readme:
+                    readme_contents[repo.get('full_name')] = readme
+            except:
+                pass
+        
+        # Store raw API responses with READMEs
+        await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
+
+        # Spawn batch analysis tasks
+        batch_results = await analyze_repo_batch(repos[:100], github_api, db_pool)
+        
+        logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results)} results")
+        return batch_results
+    finally:
+        # Cleanup connections
+        await cleanup_connections(github_api, db_pool)
 
 
 async def filter_nextjs_repos(repos: List[Dict], github_api: GitHubAPIClient,
@@ -328,40 +337,45 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
 
 
 @task
-async def fetch_render_ecosystem(github_api: GitHubAPIClient,
-                                 db_pool: asyncpg.Pool) -> List[Dict]:
+async def fetch_render_ecosystem() -> List[Dict]:
     """
     Fetch Render-related projects from multiple sources.
-
-    Args:
-        github_api: GitHub API client
-        db_pool: Database connection pool
 
     Returns:
         List of analyzed Render project dictionaries
     """
-    # Parallel fetch from multiple sources
-    results = await asyncio.gather(
-        github_api.get_org_repos('render-examples'),
-        github_api.get_org_repos('render'),
-        github_api.search_by_topic('render'),
-        github_api.search_by_topic('render-deploy'),
-        github_api.search_by_topic('render-blueprints'),
-        github_api.search_readme_mentions('render.com'),
-        return_exceptions=True
-    )
+    logger.info("fetch_render_ecosystem START")
+    
+    # Initialize connections for this task
+    github_api, db_pool = await init_connections()
+    
+    try:
+        # Parallel fetch from multiple sources
+        results = await asyncio.gather(
+            github_api.get_org_repos('render-examples'),
+            github_api.get_org_repos('render'),
+            github_api.search_by_topic('render'),
+            github_api.search_by_topic('render-deploy'),
+            github_api.search_by_topic('render-blueprints'),
+            github_api.search_readme_mentions('render.com'),
+            return_exceptions=True
+        )
 
-    # Filter out exceptions and flatten
-    valid_results = [r for r in results if not isinstance(r, Exception)]
+        # Filter out exceptions and flatten
+        valid_results = [r for r in results if not isinstance(r, Exception)]
 
-    # Deduplicate and store
-    unique_repos = deduplicate_repos(valid_results)
-    await store_raw_repos(unique_repos, db_pool, source_type='render_ecosystem')
+        # Deduplicate and store
+        unique_repos = deduplicate_repos(valid_results)
+        await store_raw_repos(unique_repos, db_pool, source_type='render_ecosystem')
 
-    # Analyze Render-specific features
-    analyzed = await analyze_render_projects(unique_repos, github_api, db_pool)
+        # Analyze Render-specific features
+        analyzed = await analyze_render_projects(unique_repos, github_api, db_pool)
 
-    return analyzed
+        logger.info(f"fetch_render_ecosystem END, returning {len(analyzed)} results")
+        return analyzed
+    finally:
+        # Cleanup connections
+        await cleanup_connections(github_api, db_pool)
 
 
 @task

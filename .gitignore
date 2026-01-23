@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Exception: Allow dashboard/lib (TypeScript library code)
+!dashboard/lib/
 parts/
 sdist/
 var/
