@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS raw_github_repos (
   repo_full_name VARCHAR(255) NOT NULL,
   api_response JSONB NOT NULL,
   readme_content TEXT,
-  fetch_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+  fetch_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   source_language VARCHAR(50),
   source_type VARCHAR(20), -- 'trending', 'render_ecosystem'
   CONSTRAINT valid_source_type CHECK (source_type IN ('trending', 'render_ecosystem'))
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS raw_repo_metrics (
   repo_full_name VARCHAR(255) NOT NULL,
   metric_type VARCHAR(50) NOT NULL, -- 'commits', 'issues', 'contributors'
   metric_data JSONB NOT NULL,
-  fetch_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+  fetch_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT valid_metric_type CHECK (metric_type IN ('commits', 'issues', 'contributors'))
 );
 

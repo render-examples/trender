@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS stg_repos_validated (
   stars INTEGER NOT NULL,
   forks INTEGER,
   open_issues INTEGER,
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
   commits_last_7_days INTEGER DEFAULT 0,
   issues_closed_last_7_days INTEGER DEFAULT 0,
   active_contributors INTEGER DEFAULT 0,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS stg_repos_validated (
   render_yaml_content TEXT,
   readme_content TEXT,
   data_quality_score DECIMAL(3,2), -- 0.00 to 1.00
-  loaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT valid_stars CHECK (stars >= 0),
   CONSTRAINT valid_quality CHECK (data_quality_score BETWEEN 0 AND 1)
 );
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS stg_render_enrichment (
   render_complexity_score INTEGER CHECK (render_complexity_score BETWEEN 0 AND 10),
   deploy_button_url TEXT,
   service_count INTEGER,
-  loaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT valid_render_category CHECK (render_category IN ('official', 'employee', 'community', 'blueprint'))
 );
 

@@ -14,11 +14,11 @@ CREATE TABLE IF NOT EXISTS dim_repositories (
   description TEXT,
   readme_content TEXT,
   language VARCHAR(50) NOT NULL,
-  created_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
   uses_render BOOLEAN DEFAULT FALSE,
   render_category VARCHAR(50),
-  valid_from TIMESTAMP NOT NULL DEFAULT NOW(),
-  valid_to TIMESTAMP,
+  valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  valid_to TIMESTAMPTZ,
   is_current BOOLEAN DEFAULT TRUE,
   CONSTRAINT valid_render_category CHECK (render_category IN ('official', 'employee', 'community', 'blueprint', NULL))
 );
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS fact_repo_snapshots (
   active_contributors INTEGER,
   rank_overall INTEGER,
   rank_in_language INTEGER,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(repo_key, snapshot_date)
 );
 
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS fact_render_usage (
   service_count INTEGER DEFAULT 1,
   complexity_score INTEGER,
   has_blueprint BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(repo_key, service_key, snapshot_date)
 );
 
@@ -118,7 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_fact_render_date ON fact_render_usage(snapshot_da
 -- Purpose: Workflow performance metrics
 CREATE TABLE IF NOT EXISTS fact_workflow_executions (
   execution_id SERIAL PRIMARY KEY,
-  execution_date TIMESTAMP NOT NULL DEFAULT NOW(),
+  execution_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   total_duration_seconds DECIMAL(8,2),
   repos_processed INTEGER,
   tasks_executed INTEGER,

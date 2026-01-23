@@ -348,13 +348,12 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         **render_data
     }
     
-    # Parse ISO datetime strings to datetime objects for PostgreSQL
-    # GitHub API returns ISO 8601 with 'Z' suffix, convert to timezone-aware datetime
+    # Parse ISO datetime strings to timezone-aware datetime objects for PostgreSQL
+    # GitHub API returns ISO 8601 with 'Z' suffix (UTC timezone)
+    # Keep timezone-aware for TIMESTAMPTZ columns
     if isinstance(enriched['created_at'], str):
-        # Replace 'Z' with '+00:00' for fromisoformat compatibility
         enriched['created_at'] = datetime.fromisoformat(enriched['created_at'].replace('Z', '+00:00'))
     if isinstance(enriched['updated_at'], str):
-        # Replace 'Z' with '+00:00' for fromisoformat compatibility
         enriched['updated_at'] = datetime.fromisoformat(enriched['updated_at'].replace('Z', '+00:00'))
 
     # Calculate data quality score
@@ -557,7 +556,7 @@ async def store_execution_stats(duration: float, repos_count: int,
                  tasks_executed, tasks_succeeded, parallel_speedup_factor,
                  languages_processed, success_rate)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, datetime.now(timezone.utc).replace(tzinfo=None), duration, repos_count, 9, 9,
+        """, datetime.now(timezone.utc), duration, repos_count, 9, 9,
             parallel_speedup, TARGET_LANGUAGES, 1.0)
 
 
