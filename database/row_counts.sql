@@ -24,7 +24,7 @@ FROM (
     UNION ALL
     SELECT 'fact_repo_snapshots', COUNT(*) FROM fact_repo_snapshots
     UNION ALL
-    SELECT 'fact_workflow_executions', COUNT(*) FROM fact_workflow_executions
+    -- fact_workflow_executions removed - not needed
     UNION ALL
     SELECT 'raw_github_repos', COUNT(*) FROM raw_github_repos
     UNION ALL
@@ -52,7 +52,7 @@ FROM (
     UNION ALL
     SELECT COUNT(*) FROM fact_repo_snapshots
     UNION ALL
-    SELECT COUNT(*) FROM fact_workflow_executions
+    0 -- fact_workflow_executions removed
     UNION ALL
     SELECT COUNT(*) FROM raw_github_repos
     UNION ALL

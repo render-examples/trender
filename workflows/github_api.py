@@ -298,89 +298,107 @@ class GitHubAPIClient:
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
-    async def search_repos_with_file(self, filename: str, limit: int = 50, 
-                                      created_since: datetime = None) -> List[Dict]:
+    async def search_repos_by_path(self, filename: str, limit: int = 50,
+                                    pushed_since: datetime = None) -> List[Dict]:
         """
-        Search for repositories containing a specific file, ordered by creation date.
-        For Render detection: searches repos with the file, then filters by creation date.
-        
-        Two-step approach:
-        1. Code search for filename (GitHub Code Search doesn't support created: qualifier)
-        2. Fetch full repo details to filter by creation date
+        Search for repositories containing a file using repository search with path: qualifier.
+        More efficient than code search - single API call, direct repo results.
         
         Args:
             filename: Filename to search for (e.g., 'render.yaml')
             limit: Maximum number of results
-            created_since: Only include repos created after this date (default: 1 month ago)
+            pushed_since: Only include repos with activity since this date (default: 6 months ago)
         
         Returns:
-            List of repository data dictionaries ordered by creation date descending
+            List of repository data dictionaries ordered by stars descending
         """
-        # Default to last month for fresh Render projects
-        if not created_since:
-            created_since = datetime.now(timezone.utc) - timedelta(days=30)
+        # Default to last 6 months for active Render projects
+        if not pushed_since:
+            pushed_since = datetime.now(timezone.utc) - timedelta(days=180)
         
-        logger.info(f"Step 1: Searching code for filename:{filename}")
+        date_str = pushed_since.strftime('%Y-%m-%d')
         
-        # Step 1: Code search (without date filter - not supported by GitHub Code Search API)
-        url = f"{self.base_url}/search/code?q=filename:{filename}&per_page=100"
+        # Repository search with path: qualifier and date filter
+        query = f"path:{filename} pushed:>={date_str}"
+        url = f"{self.base_url}/search/repositories?q={query}&sort=stars&order=desc&per_page={min(limit, 100)}"
+        
+        logger.info(f"Searching repositories with path:{filename}, pushed since {date_str}")
+        
         result = await self._api_call(url)
         
         if not result or 'items' not in result:
-            logger.warning(f"Code search returned no results for {filename}")
+            logger.warning(f"Repository search returned no results for path:{filename}")
             return []
         
-        logger.info(f"Code search found {len(result.get('items', []))} files")
+        items = result.get('items', [])
+        logger.info(f"Found {len(items)} repos with {filename}")
         
-        # Extract unique repository names from code search results
+        return items[:limit]
+    
+    async def search_render_ecosystem(self, limit: int = 50) -> List[Dict]:
+        """
+        Multi-strategy search for Render ecosystem repositories.
+        Combines multiple search strategies to maximize coverage.
+        
+        Strategies:
+        1. Repository search with path:render.yaml (recently active repos)
+        2. render-examples organization (official examples)
+        3. Topic search (community repos tagged with render)
+        
+        Args:
+            limit: Maximum number of results to return
+        
+        Returns:
+            Deduplicated list of repository data dictionaries
+        """
+        all_repos = []
         seen_repos = set()
-        repo_names = []
         
-        for item in result['items']:
-            repo_data = item.get('repository', {})
-            repo_full_name = repo_data.get('full_name')
-            
-            if repo_full_name and repo_full_name not in seen_repos:
-                seen_repos.add(repo_full_name)
-                repo_names.append(repo_full_name)
+        logger.info("=== STRATEGY 1: Repository search with path:render.yaml ===")
+        try:
+            # Strategy 1: Path-based search (last 6 months of activity)
+            repos_by_path = await self.search_repos_by_path('render.yaml', limit=30)
+            for repo in repos_by_path:
+                full_name = repo.get('full_name')
+                if full_name and full_name not in seen_repos:
+                    seen_repos.add(full_name)
+                    all_repos.append(repo)
+            logger.info(f"Strategy 1: Found {len(repos_by_path)} repos via path search")
+        except Exception as e:
+            logger.warning(f"Strategy 1 failed: {e}")
         
-        logger.info(f"Step 2: Fetching full details for {len(repo_names)} unique repos")
+        logger.info("=== STRATEGY 2: render-examples organization ===")
+        try:
+            # Strategy 2: Official render-examples org (high quality)
+            render_examples = await self.get_org_repos('render-examples')
+            for repo in render_examples:
+                full_name = repo.get('full_name')
+                if full_name and full_name not in seen_repos:
+                    seen_repos.add(full_name)
+                    all_repos.append(repo)
+            logger.info(f"Strategy 2: Found {len(render_examples)} repos from render-examples org")
+        except Exception as e:
+            logger.warning(f"Strategy 2 failed: {e}")
         
-        # Step 2: Fetch full repo details to get accurate creation dates
-        repos_with_details = []
+        logger.info("=== STRATEGY 3: Topic-based search ===")
+        try:
+            # Strategy 3: Topic search (community projects)
+            repos_by_topic = await self.search_by_topic('render-blueprints')
+            for repo in repos_by_topic:
+                full_name = repo.get('full_name')
+                if full_name and full_name not in seen_repos:
+                    seen_repos.add(full_name)
+                    all_repos.append(repo)
+            logger.info(f"Strategy 3: Found {len(repos_by_topic)} repos via topic search")
+        except Exception as e:
+            logger.warning(f"Strategy 3 failed: {e}")
         
-        for repo_full_name in repo_names:
-            if '/' not in repo_full_name:
-                continue
-                
-            owner, repo = repo_full_name.split('/', 1)
-            repo_details = await self.get_repo_details(owner, repo)
-            
-            if repo_details:
-                repos_with_details.append(repo_details)
+        # Sort by stars descending to prioritize quality
+        all_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
-        logger.info(f"Successfully fetched {len(repos_with_details)} repo details")
+        result = all_repos[:limit]
+        logger.info(f"=== TOTAL: Returning {len(result)} unique Render repos (from {len(all_repos)} total) ===")
         
-        # Filter by creation date
-        filtered_repos = []
-        for repo in repos_with_details:
-            created_at_str = repo.get('created_at')
-            if created_at_str:
-                try:
-                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                    if created_at >= created_since:
-                        filtered_repos.append(repo)
-                except (ValueError, AttributeError):
-                    continue
-        
-        logger.info(f"Filtered to {len(filtered_repos)} repos created since {created_since.strftime('%Y-%m-%d')}")
-        
-        # Sort by creation date descending (newest first)
-        filtered_repos.sort(key=lambda r: r.get('created_at', ''), reverse=True)
-        
-        # Return top N
-        result = filtered_repos[:limit]
-        logger.info(f"Returning top {len(result)} repos")
         return result
 
     async def get_org_repos(self, org: str) -> List[Dict]:

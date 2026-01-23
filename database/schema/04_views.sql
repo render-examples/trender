@@ -89,24 +89,6 @@ WHERE dr.is_current = TRUE
   AND fs.rank_in_language <= 50
 ORDER BY dl.language_name, fs.rank_in_language;
 
--- View: analytics_workflow_performance
--- Purpose: Latest workflow execution performance metrics
-CREATE OR REPLACE VIEW analytics_workflow_performance AS
-SELECT
-  execution_date,
-  total_duration_seconds,
-  repos_processed,
-  tasks_executed,
-  tasks_succeeded,
-  tasks_failed,
-  tasks_retried,
-  parallel_speedup_factor,
-  languages_processed,
-  success_rate,
-  ROUND((tasks_succeeded::DECIMAL / NULLIF(tasks_executed, 0)) * 100, 2) as task_success_percentage
-FROM fact_workflow_executions
-ORDER BY execution_date DESC;
-
 -- View: analytics_render_services_adoption
 -- Purpose: Render service type adoption statistics
 CREATE OR REPLACE VIEW analytics_render_services_adoption AS

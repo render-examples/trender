@@ -14,7 +14,7 @@ from typing import Dict, List
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from render_detection import detect_render_usage
+from render_detection import detect_render_usage, store_render_enrichment
 from etl.extract import store_raw_repos, store_raw_metrics
 from etl.data_quality import calculate_data_quality_score
 
@@ -334,6 +334,20 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     # Store in staging layer
     logger.info(f"Storing {enriched['repo_full_name']} to staging (quality: {enriched['data_quality_score']})")
     await store_in_staging(enriched, db_pool)
+    
+    # If Render repo, store enrichment data
+    if enriched.get('uses_render') and render_data.get('uses_render'):
+        enriched_project = {
+            'repo_full_name': enriched['repo_full_name'],
+            'render_category': render_data.get('render_category', 'community'),
+            'render_services': render_data.get('services', []),
+            'has_blueprint_button': render_data.get('has_blueprint_button', False),
+            'render_complexity_score': render_data.get('complexity_score', 0),
+            'service_count': render_data.get('service_count', 0)
+        }
+        logger.info(f"Storing Render enrichment for {enriched['repo_full_name']}")
+        await store_render_enrichment([enriched_project], db_pool)
+    
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
 
     # Return minimal summary (data is already in DB, no need to pass full objects)
@@ -377,22 +391,21 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
 @task
 async def fetch_render_repos() -> List[Dict]:
     """
-    Fetch NEW repos (created in last month) containing render.yaml, ordered by stars.
-    Focuses on fresh Render projects, not legacy ones.
+    Fetch Render ecosystem repos using multi-strategy search.
+    Combines path search, render-examples org, and topic search.
     
     Returns:
         List of repository dictionaries
     """
-    logger.info("fetch_render_repos START - searching repos from last 30 days")
+    logger.info("fetch_render_repos START - multi-strategy search")
     
     # Initialize connections
     github_api, db_pool = await init_connections()
     
     try:
-        # Search for NEW repos with render.yaml file (last 30 days)
-        # Automatically filters by created date and sorts by stars
-        repos = await github_api.search_repos_with_file('render.yaml', limit=50)
-        logger.info(f"Found {len(repos)} recent repos with render.yaml")
+        # Multi-strategy search: path + org + topic
+        repos = await github_api.search_render_ecosystem(limit=50)
+        logger.info(f"Found {len(repos)} total Render ecosystem repos")
         
         if not repos:
             return []
@@ -435,6 +448,7 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     
     async with db_pool.acquire() as conn:
         # Extract all high-quality repos from staging (no date filtering)
+        # Join with render enrichment to get full data
         # Pull top 50 per language = 150 total repos
         repos = await conn.fetch("""
             SELECT
@@ -449,8 +463,14 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.updated_at,
                 srv.uses_render,
                 srv.readme_content,
-                srv.data_quality_score
+                srv.data_quality_score,
+                sre.render_category,
+                sre.render_services,
+                sre.render_complexity_score,
+                sre.has_blueprint_button,
+                sre.service_count
             FROM stg_repos_validated srv
+            LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
             WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
             LIMIT 150
@@ -624,6 +644,32 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
                     momentum_score = EXCLUDED.momentum_score,
                     rank_overall = EXCLUDED.rank_overall
             """, repo_key, language_key, today, repo['stars'], repo['forks'], momentum_score, idx)
+            
+            # If Render repo, also populate fact_render_usage
+            if uses_render and repo.get('render_services'):
+                render_services = repo.get('render_services', [])
+                complexity = repo.get('render_complexity_score', 0)
+                has_blueprint = repo.get('has_blueprint_button', False)
+                
+                for service_type in render_services:
+                    # Get service_key from dim_render_services
+                    service_key = await conn.fetchval("""
+                        SELECT service_key FROM dim_render_services
+                        WHERE service_type = $1
+                    """, service_type)
+                    
+                    if service_key:
+                        await conn.execute("""
+                            INSERT INTO fact_render_usage
+                                (repo_key, service_key, snapshot_date, service_count,
+                                 complexity_score, has_blueprint)
+                            VALUES ($1, $2, $3, 1, $4, $5)
+                            ON CONFLICT (repo_key, service_key, snapshot_date) DO UPDATE SET
+                                complexity_score = EXCLUDED.complexity_score,
+                                has_blueprint = EXCLUDED.has_blueprint
+                        """, repo_key, service_key, today, complexity, has_blueprint)
+                        
+                        logger.debug(f"Inserted fact_render_usage for {repo_name}, service: {service_type}")
             
             # region agent log
             lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'

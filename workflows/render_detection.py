@@ -5,8 +5,11 @@ Detects Render usage patterns and categorizes Render projects.
 
 import re
 import yaml
+import logging
 from typing import Dict, List, Optional
 import os
+
+logger = logging.getLogger(__name__)
 
 
 def parse_render_yaml(render_yaml_content: str) -> Dict:
@@ -235,23 +238,71 @@ def score_documentation(repo_data: Dict, render_data: Dict) -> int:
 
 async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
     """
-    Simplified: just return if repo already marked as uses_render.
-    For non-Render repos, return False without checking.
+    Detect Render usage by fetching and parsing render.yaml file.
+    Returns comprehensive Render enrichment data.
     
     Args:
         repo_data: Repository data dictionary
-        github_api: GitHub API client (unused)
+        github_api: GitHub API client
         db_pool: Database pool (unused)
     
     Returns:
-        Dictionary with Render usage detection results
+        Dictionary with Render usage detection and enrichment results
     """
-    # If already marked as Render project (from search), return True
-    if repo_data.get('uses_render'):
-        return {'uses_render': True}
+    repo_full_name = repo_data.get('full_name', '')
     
-    # Otherwise, don't waste API calls checking
-    return {'uses_render': False}
+    # If already marked as Render project (from search), verify and enrich
+    if repo_data.get('uses_render'):
+        logger.info(f"Repo {repo_full_name} marked as Render project, fetching render.yaml")
+    
+    # Try to fetch render.yaml from root
+    if not repo_full_name or '/' not in repo_full_name:
+        return {'uses_render': False}
+    
+    owner, repo = repo_full_name.split('/', 1)
+    
+    try:
+        # Fetch render.yaml content
+        render_yaml_content = await github_api.get_file_contents(owner, repo, 'render.yaml')
+        
+        if not render_yaml_content:
+            # No render.yaml found
+            return {'uses_render': False}
+        
+        logger.info(f"Found render.yaml for {repo_full_name}")
+        
+        # Parse render.yaml
+        render_config = parse_render_yaml(render_yaml_content)
+        
+        # Check for Dockerfile patterns (optional)
+        dockerfile_content = await github_api.get_file_contents(owner, repo, 'Dockerfile')
+        docker_patterns = scan_dockerfile_for_render(dockerfile_content) if dockerfile_content else {}
+        
+        # Calculate complexity
+        complexity_score = calculate_render_complexity(render_config, docker_patterns)
+        
+        # Categorize project
+        render_category = categorize_render_project(repo_data)
+        
+        # Check for deploy button (look for render button in README)
+        readme = repo_data.get('readme_content', '')
+        has_blueprint_button = 'render.com/deploy' in readme.lower() if readme else False
+        
+        # Return full enrichment data
+        return {
+            'uses_render': True,
+            'render_yaml_content': render_yaml_content,
+            'render_category': render_category,
+            'services': render_config.get('services', []),
+            'databases': render_config.get('databases', []),
+            'service_count': render_config.get('service_count', 0),
+            'complexity_score': complexity_score,
+            'has_blueprint_button': has_blueprint_button
+        }
+        
+    except Exception as e:
+        logger.debug(f"Failed to fetch/parse render.yaml for {repo_full_name}: {e}")
+        return {'uses_render': False}
 
 
 async def store_render_enrichment(enriched_projects: List[Dict], db_pool):

@@ -1,6 +1,6 @@
 # Trender: GitHub Trending Analytics Platform
 
-A batch analytics platform with a **3-layer data engineering pipeline** (Raw → Staging → Analytics) that analyzes trending GitHub repositories across 3 programming languages (Python, TypeScript with Next.js >= 16, and Go). Leverages Render Workflows' distributed task execution to process data in parallel, storing results in a dimensional model for high-performance analytics.
+A batch analytics platform with a **3-layer data engineering pipeline** (Raw → Staging → Analytics) that analyzes trending GitHub repositories across 3 programming languages (Python, TypeScript/Next.js, and Go). Leverages Render Workflows' distributed task execution to process data in parallel, storing results in a dimensional model for high-performance analytics.
 
 ## Key Features
 
@@ -39,7 +39,7 @@ graph TD
 - GitHub REST API
 
 **Frontend (Dashboard)**
-- Next.js 14 (App Router)
+- Next.js 14.2 (App Router)
 - TypeScript
 - Tailwind CSS
 - Recharts for visualizations
@@ -59,12 +59,9 @@ trender/
 │   ├── workflow.py           # Main workflow with @task decorators
 │   ├── github_api.py         # Async GitHub API client
 │   ├── connections.py        # Shared resource management
-│   ├── metrics.py            # Momentum/activity calculations
 │   ├── render_detection.py  # Render usage detection
 │   ├── etl/
 │   │   ├── extract.py        # Raw layer extraction
-│   │   ├── transform.py      # Staging transformations
-│   │   ├── load.py           # Analytics layer loading
 │   │   └── data_quality.py   # Quality scoring
 │   └── requirements.txt
 ├── trigger/
@@ -72,8 +69,10 @@ trender/
 │   └── requirements.txt
 ├── dashboard/
 │   ├── app/                  # Next.js App Router pages
+│   ├── components/           # Reusable UI components
 │   ├── lib/
-│   │   └── db.ts            # Database utilities
+│   │   ├── db.ts            # Database utilities
+│   │   └── formatters.ts    # Data formatting helpers
 │   └── package.json
 ├── database/
 │   ├── schema/
@@ -283,7 +282,10 @@ Other required variables (add as you complete the setup):
 ### 4. Create PostgreSQL Database on Render
 
 1. Go to Render Dashboard
-2. Create new PostgreSQL database named `trender`
+2. Create new PostgreSQL database:
+   - **Name**: `trender-db`
+   - **Database Name**: `trender`
+   - **Plan**: `basic_256mb` (or higher for production)
 3. Note the connection string for `DATABASE_URL`
 
 ### 5. Initialize Database Schema
@@ -312,19 +314,31 @@ psql $DATABASE_URL -f database/schema/04_views.sql
 #### What gets created:
 
 **Raw Layer:**
-- `raw_github_repos`: Stores complete GitHub API responses
-- `raw_repo_metrics`: Stores repository metrics (stars, forks, issues)
+- `raw_github_repos`: Stores complete GitHub API responses (JSONB format)
+- `raw_repo_metrics`: Stores repository metrics (commits, issues, contributors)
 
 **Staging Layer:**
-- `stg_repos_validated`: Cleaned and validated repository data
-- `stg_render_enrichment`: Render-specific metadata and detection
+- `stg_repos_validated`: Cleaned and validated repository data with quality scores
+- `stg_render_enrichment`: Render-specific metadata (service types, complexity, categories)
 
 **Analytics Layer:**
-- Dimension tables: `dim_repositories`, `dim_languages`, `dim_render_services`
-- Fact tables: `fact_repo_snapshots`, `fact_render_usage`, `fact_workflow_executions`
+- **Dimension tables**: 
+  - `dim_repositories`: Repository master data with SCD Type 2 history
+  - `dim_languages`: Language metadata
+  - `dim_render_services`: Render service type reference data (web, worker, cron, etc.)
+- **Fact tables**: 
+  - `fact_repo_snapshots`: Daily snapshots of repo metrics and momentum scores
+  - `fact_render_usage`: Render service adoption by repository
 
 **Views:**
-- Pre-aggregated analytics views for dashboard queries
+- `analytics_trending_repos_current`: Current top trending repos across all languages
+- `analytics_render_showcase`: Render ecosystem showcase with enrichment
+- `analytics_language_rankings`: Per-language rankings with Render adoption stats
+- `analytics_render_services_adoption`: Service type adoption statistics
+- `analytics_language_trends`: Language-level aggregated statistics
+- `analytics_repo_history`: Historical trends for charting
+
+**Total: 9 tables + 6 views**
 
 #### Verify Database Initialization
 
@@ -334,7 +348,17 @@ Check that all tables were created successfully:
 psql $DATABASE_URL -c "\dt"
 ```
 
-You should see 12+ tables across the raw, stg, dim, and fact prefixes.
+You should see 9 tables across the raw, stg, dim, and fact prefixes.
+
+#### Apply Cleanup Migration (If Upgrading)
+
+If you're upgrading from an older version that had workflow execution tracking, run the cleanup script:
+
+```bash
+psql $DATABASE_URL -f database/cleanup_workflow_tracking.sql
+```
+
+This removes the unused `fact_workflow_executions` table and `analytics_workflow_performance` view.
 
 #### Troubleshooting
 
@@ -345,14 +369,20 @@ You should see 12+ tables across the raw, stg, dim, and fact prefixes.
 ### 6. Deploy Services via render.yaml
 
 The `render.yaml` file defines:
-- **Web Service**: Next.js dashboard
-- **Cron Job**: Hourly workflow trigger
-- **Database**: PostgreSQL instance
+- **Web Service**: Next.js dashboard (`trender-dashboard`)
+- **Workflow**: Main analytics pipeline (`trender-wf`)
+- **Cron Job**: Hourly workflow trigger (`trender-analyzer-cron`)
+- **Database**: PostgreSQL instance (`trender-db`)
 
 Deploy to Render:
+1. Push your code to GitHub
+2. In Render Dashboard, click **"New +"** → **"Blueprint"**
+3. Connect your GitHub repository
+4. Render will automatically detect and deploy all services from `render.yaml`
+
+Or use the Render CLI:
 ```bash
-# Push to GitHub and connect to Render
-# Or use Render Blueprint button
+render blueprint launch
 ```
 
 ### 7. Configure Environment Variables in Render
@@ -387,7 +417,7 @@ pip install -r requirements.txt
 
 # Set required environment variables
 export RENDER_API_KEY=your_render_api_key
-export RENDER_WORKFLOW_SLUG=trender  # Your workflow slug from Render dashboard
+export RENDER_WORKFLOW_SLUG=trender-wf  # Your workflow slug from Render dashboard
 
 # Run the trigger script
 python trigger.py
@@ -395,8 +425,8 @@ python trigger.py
 
 Expected output:
 ```
-Triggering task: trender/main-analysis-task
-✓ Workflow triggered successfully at 2026-01-20 12:00:00
+Triggering task: trender-wf/main-analysis-task
+✓ Workflow triggered successfully at 2026-01-23 12:00:00
   Task Run ID: run_abc123xyz
   Initial Status: running
 ```
@@ -405,10 +435,10 @@ Triggering task: trender/main-analysis-task
 
 1. Go to [Render Dashboard](https://dashboard.render.com)
 2. Navigate to **Workflows** section
-3. Select your `trender` workflow
-4. Click **"Trigger Workflow"** button
-5. Select the `main-analysis-task` task
-6. Click **"Run Task"**
+3. Select your `trender-wf` workflow
+4. Click on the **"main-analysis-task"** task
+5. Click **"Run Task"** button
+6. Monitor the task execution in real-time
 
 #### Method 3: Using Render CLI
 
@@ -422,29 +452,30 @@ npm install -g @render-inc/cli
 render login
 
 # Trigger the workflow
-render workflows trigger trender main-analysis-task
+render workflows trigger trender-wf main-analysis-task
 ```
 
 #### Verify Workflow Execution
 
 Check the workflow status:
 
-1. **Via Dashboard**: Go to Workflows → trender → View recent runs
+1. **Via Dashboard**: Go to Workflows → trender-wf → View recent runs
 2. **Via Script**: The trigger script outputs the Task Run ID
-3. **Via Database**: Query the `fact_workflow_executions` table:
+3. **Via Database**: Query the `dim_repositories` table to see loaded data:
 
 ```bash
-psql $DATABASE_URL -c "SELECT * FROM fact_workflow_executions ORDER BY execution_date DESC LIMIT 1;"
+psql $DATABASE_URL -c "SELECT language, COUNT(*) as count FROM dim_repositories WHERE is_current = TRUE GROUP BY language;"
 ```
 
-Expected workflow completion time: **8-15 seconds** for ~300 repositories
+Expected workflow completion time: **10-20 seconds** for ~150 repositories across 3 languages + Render ecosystem
 
 #### Troubleshooting
 
 - **"RENDER_API_KEY not set"**: Export your API key from [Render Settings](https://dashboard.render.com/u/settings#api-keys)
-- **"Task not found"**: Verify your workflow slug and that the workflow is deployed
+- **"Task not found"**: Verify your workflow slug is `trender-wf` and that the workflow is deployed
 - **"Connection refused"**: Check that `DATABASE_URL` is correct and the database is running
-- **Workflow fails**: Check the Render dashboard logs for detailed error messages
+- **Workflow fails**: Check the Render dashboard logs under Workflows → trender-wf → Logs for detailed error messages
+- **"GITHUB_ACCESS_TOKEN not set"**: Ensure you added the token to the workflow service environment variables (step 7)
 
 ### 9. Access Dashboard
 
@@ -471,31 +502,51 @@ You should see:
 - Tables: `stg_repos_validated`, `stg_render_enrichment`
 - Data quality scoring (0.0 - 1.0)
 - Business rules applied
+- **Render enrichment data**: service types, complexity scores, categories, blueprint indicators
 
 ### Layer 3: Analytics (Dimensional Model)
 - **Dimensions**: `dim_repositories`, `dim_languages`, `dim_render_services`
-- **Facts**: `fact_repo_snapshots`, `fact_render_usage`, `fact_workflow_executions`
+- **Facts**: `fact_repo_snapshots`, `fact_render_usage`
 - **Views**: Pre-aggregated analytics for dashboard
+- **Render analytics**: Service adoption metrics, complexity distributions, blueprint quality indicators
 
 ## Workflow Tasks
 
-The workflow consists of 8 tasks decorated with `@task`:
+The workflow consists of 4 main tasks decorated with `@task`:
 
-1. **`main_analysis_task`**: Orchestrator that spawns parallel tasks
-2. **`fetch_language_repos`**: Fetches repos for Python, TypeScript, Go
-3. **`analyze_repo_batch`**: Analyzes repos in batches of 10
-4. **`fetch_render_ecosystem`**: Fetches Render-related projects
-5. **`analyze_render_projects`**: Analyzes Render-specific features
-6. **`aggregate_results`**: ETL pipeline execution (Extract → Transform → Load)
-7. **`store_execution_stats`**: Records workflow performance metrics
+1. **`main_analysis_task`**: Orchestrator that spawns parallel tasks and coordinates the ETL pipeline
+2. **`fetch_language_repos`**: Fetches and stores trending repos for Python, TypeScript, or Go
+3. **`analyze_repo_batch`**: Analyzes repos in batches of 10, enriching with detailed metrics
+4. **`fetch_render_repos`**: Fetches Render ecosystem repositories using multi-strategy search
+
+The orchestrator runs 4 parallel tasks (3 languages + 1 Render ecosystem), then aggregates results through the ETL pipeline (Extract from staging → Calculate scores → Load to analytics).
+
+### Render Ecosystem Discovery
+
+The `fetch_render_repos` task uses a multi-strategy approach to discover Render projects:
+
+1. **Repository Search with path: qualifier** - Searches for repos containing `render.yaml` with recent activity (last 6 months)
+2. **render-examples Organization** - Fetches official Render example repositories (high quality blueprints)
+3. **Topic Search** - Finds community repos tagged with `render-blueprints` topic
+
+This approach maximizes coverage and ensures we capture both official and community Render projects. When a Render repo is found, the system:
+
+- Fetches and parses the `render.yaml` file to extract service configurations
+- Calculates complexity scores based on number and type of services
+- Categorizes projects (official, community, blueprint)
+- Stores enrichment data in `stg_render_enrichment` table
+- Populates `fact_render_usage` for service adoption analytics
 
 ## Metrics Calculated
 
-- **Star Velocity**: `(stars_last_7_days / total_stars) * 100`
-- **Activity Score**: Weighted formula using commits, issues, contributors
-- **Momentum Score**: `(star_velocity * 0.4) + (activity_score * 0.6)`
-- **Render Boost**: 1.2x multiplier for projects using Render
-- **Freshness Penalty**: 0.9x for repos older than 180 days
+- **Momentum Score**: Composite score combining:
+  - **50% Normalized Stars**: Stars normalized within dataset (general repos vs Render repos scored separately)
+  - **50% Recency Score**: Based on repository creation date
+    - 1.0 for repos ≤ 30 days old
+    - 0.75 for repos 31-60 days old
+    - 0.5 for repos 61-90 days old
+    - 0.0 for repos > 90 days old
+- **Note**: Activity metrics (commits, issues, contributors) are collected but not used in scoring
 
 ## Development
 
@@ -518,6 +569,8 @@ npm run dev
 
 ### Run Database Migrations
 
+If you need to recreate or update the schema:
+
 ```bash
 psql $DATABASE_URL -f database/schema/01_raw_layer.sql
 psql $DATABASE_URL -f database/schema/02_staging_layer.sql
@@ -525,18 +578,32 @@ psql $DATABASE_URL -f database/schema/03_analytics_layer.sql
 psql $DATABASE_URL -f database/schema/04_views.sql
 ```
 
+Or use the complete initialization script:
+
+```bash
+psql $DATABASE_URL -f database/init.sql
+```
+
+If upgrading from an older version, apply the cleanup migration:
+
+```bash
+psql $DATABASE_URL -f database/cleanup_workflow_tracking.sql
+```
+
 ## Success Metrics
 
 **Technical:**
-- Process 300+ repos across 3 languages in under 10 seconds
-- 3x speedup vs sequential processing
-- 99%+ success rate on workflow runs
-- Data quality score >= 0.90 for 95%+ repositories
+- Process 150 repos across 3 languages + Render ecosystem in 10-20 seconds
+- 4x parallel task execution (Python, TypeScript, Go, Render)
+- 3-layer data pipeline with dimensional modeling (9 tables + 6 views)
+- Data quality score >= 0.70 for all loaded repositories
+- Multi-strategy Render discovery (path search + org repos + topics)
 
 **Marketing:**
-- Showcase 50+ Render ecosystem projects
-- Track Render adoption vs competitors
-- Identify case study candidates
+- Showcase trending Render ecosystem projects (render.yaml repositories)
+- Highlight momentum scores combining stars and recency
+- Identify case study candidates with high engagement
+- Track Render service adoption patterns (web, worker, cron, etc.)
 
 ## License
 

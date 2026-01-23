@@ -76,24 +76,6 @@ export interface Repository {
 /**
  * Workflow execution stats type
  */
-export interface WorkflowStats {
-  id: number;
-  execution_id: string;
-  started_at: Date;
-  completed_at: Date;
-  duration_seconds: number;
-  total_tasks_executed: number;
-  successful_tasks: number;
-  failed_tasks: number;
-  retried_tasks: number;
-  repos_analyzed: number;
-  languages_processed: number;
-  parallel_speedup_factor: number;
-  avg_task_spinup_ms: number;
-  max_concurrent_tasks: number;
-  status: string;
-}
-
 /**
  * Get top trending repositories
  */
@@ -152,18 +134,6 @@ export async function getLanguageStats(): Promise<any[]> {
 }
 
 /**
- * Get latest workflow execution stats
- */
-export async function getLatestWorkflowStats(): Promise<WorkflowStats | null> {
-  const result = await query<WorkflowStats>(
-    `SELECT * FROM analytics_workflow_performance
-     ORDER BY execution_date DESC
-     LIMIT 1`
-  );
-  return result.rows[0] || null;
-}
-
-/**
  * Get repository details by full name
  */
 export async function getRepoDetails(fullName: string): Promise<Repository | null> {
@@ -184,19 +154,6 @@ export async function getRepoSnapshots(fullName: string, limit: number = 30): Pr
      ORDER BY snapshot_date DESC
      LIMIT $2`,
     [fullName, limit]
-  );
-  return result.rows;
-}
-
-/**
- * Get workflow execution history
- */
-export async function getWorkflowHistory(limit: number = 10): Promise<WorkflowStats[]> {
-  const result = await query<WorkflowStats>(
-    `SELECT * FROM analytics_workflow_performance
-     ORDER BY execution_date DESC
-     LIMIT $1`,
-    [limit]
   );
   return result.rows;
 }

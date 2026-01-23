@@ -3,7 +3,7 @@ import Header from '@/components/Header'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Trender - GitHub Trending Analytics',
+  title: 'Trender — Render Workflows',
   description: 'Discover trending GitHub repositories powered by Render Workflows',
   icons: {
     icon: '/images/trend.png',

@@ -115,24 +115,3 @@ CREATE TABLE IF NOT EXISTS fact_render_usage (
 CREATE INDEX IF NOT EXISTS idx_fact_render_repo ON fact_render_usage(repo_key, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_fact_render_service ON fact_render_usage(service_key);
 CREATE INDEX IF NOT EXISTS idx_fact_render_date ON fact_render_usage(snapshot_date DESC);
-
--- Fact: fact_workflow_executions
--- Purpose: Workflow performance metrics
-CREATE TABLE IF NOT EXISTS fact_workflow_executions (
-  execution_id SERIAL PRIMARY KEY,
-  execution_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  total_duration_seconds DECIMAL(8,2),
-  repos_processed INTEGER,
-  tasks_executed INTEGER,
-  tasks_succeeded INTEGER,
-  tasks_failed INTEGER,
-  tasks_retried INTEGER,
-  parallel_speedup_factor DECIMAL(5,2), -- vs sequential
-  languages_processed TEXT[],
-  error_details JSONB,
-  success_rate DECIMAL(5,2)
-);
-
--- Indexes for fact_workflow_executions
-CREATE INDEX IF NOT EXISTS idx_fact_executions_date ON fact_workflow_executions(execution_date DESC);
-CREATE INDEX IF NOT EXISTS idx_fact_executions_success ON fact_workflow_executions(success_rate);
