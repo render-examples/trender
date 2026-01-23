@@ -249,7 +249,13 @@ async def analyze_repo_batch(repos: List[Dict]) -> List[Dict]:
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
             # Filter out exceptions and collect successful results
-            enriched_repos.extend([r for r in batch_results if not isinstance(r, Exception)])
+            for i, result in enumerate(batch_results):
+                if isinstance(result, Exception):
+                    repo_name = batch[i].get('full_name', 'unknown')
+                    logger.error(f"Failed to analyze {repo_name}: {type(result).__name__}: {str(result)}")
+                    logger.error(f"Full traceback: {''.join(traceback.format_exception(type(result), result, result.__traceback__))}")
+                else:
+                    enriched_repos.append(result)
 
         logger.info(f"analyze_repo_batch END: {len(enriched_repos)} enriched")
         return enriched_repos
