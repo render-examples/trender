@@ -51,6 +51,17 @@ async def main_analysis_task() -> Dict:
 
     Returns execution summary.
     """
+    # #region agent log
+    import json
+    import sys
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:54","message":"main_analysis_task ENTRY","data":{"dev_mode":DEV_MODE},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H4,H5"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     execution_start = datetime.now(timezone.utc)
     logger.info(f"Workflow started at {execution_start}")
 
@@ -62,9 +73,32 @@ async def main_analysis_task() -> Dict:
             
             logger.info("Python task completed, starting ETL pipeline")
             
+            # #region agent log
+            try:
+                with open(debug_log_path, 'a') as f:
+                    f.write(json.dumps({"location":"workflow.py:66","message":"About to call init_connections for ETL","data":{},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             # Initialize connections for ETL pipeline
-            github_api, db_pool = await init_connections()
-            logger.info("Connections initialized for ETL pipeline")
+            try:
+                github_api, db_pool = await init_connections()
+                logger.info("Connections initialized for ETL pipeline")
+            except ConnectionError as e:
+                # #region agent log
+                try:
+                    with open(debug_log_path, 'a') as f:
+                        f.write(json.dumps({"location":"workflow.py:75","message":"ConnectionError caught in main_analysis_task","data":{"error_msg":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                
+                logger.error(f"FATAL: Cannot connect to database: {e}")
+                logger.error("Exiting workflow gracefully due to connection failure")
+                
+                # Exit gracefully with error status
+                sys.exit(1)
             
             # Run ETL pipeline: Extract from staging → Transform → Load to analytics
             final_result = await aggregate_results([python_result], db_pool, execution_start)
@@ -104,8 +138,21 @@ async def main_analysis_task() -> Dict:
                     logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
             # Aggregate and store final results
-            github_api, db_pool = await init_connections()
-            logger.info("Connections initialized for aggregation")
+            try:
+                github_api, db_pool = await init_connections()
+                logger.info("Connections initialized for aggregation")
+            except ConnectionError as e:
+                # #region agent log
+                try:
+                    with open(debug_log_path, 'a') as f:
+                        f.write(json.dumps({"location":"workflow.py:108","message":"ConnectionError in production mode aggregation","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                
+                logger.error(f"FATAL: Cannot connect to database for aggregation: {e}")
+                logger.error("Exiting workflow gracefully due to connection failure")
+                sys.exit(1)
             
             final_result = await aggregate_results(results, db_pool, execution_start)
 
@@ -129,10 +176,34 @@ async def fetch_language_repos(language: str) -> List[Dict]:
     Returns:
         List of enriched repository dictionaries
     """
+    # #region agent log
+    import json
+    import sys
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:135","message":"fetch_language_repos ENTRY","data":{"language":language},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     logger.info(f"fetch_language_repos START for {language}")
     
     # Initialize connections for this task
-    github_api, db_pool = await init_connections()
+    try:
+        github_api, db_pool = await init_connections()
+    except ConnectionError as e:
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:145","message":"ConnectionError in fetch_language_repos","data":{"language":language,"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        logger.error(f"FATAL: Cannot connect to database for {language}: {e}")
+        logger.error("Exiting workflow gracefully due to connection failure")
+        sys.exit(1)
     
     try:
         # Search GitHub API
@@ -201,6 +272,20 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
         logger.info("Initializing connections...")
         github_api, db_pool = await init_connections()
         logger.info(f"Connections initialized successfully. Session: {github_api.session is not None}, Pool: {db_pool is not None}")
+    except ConnectionError as e:
+        # #region agent log
+        import json
+        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:204","message":"ConnectionError in analyze_repo_batch","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
+        logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        return []  # Return empty list if we can't even connect
     except Exception as e:
         logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
         logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
@@ -397,10 +482,34 @@ async def fetch_render_repos() -> List[Dict]:
     Returns:
         List of repository dictionaries
     """
+    # #region agent log
+    import json
+    import sys
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:400","message":"fetch_render_repos ENTRY","data":{},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     logger.info("fetch_render_repos START - multi-strategy search")
     
     # Initialize connections
-    github_api, db_pool = await init_connections()
+    try:
+        github_api, db_pool = await init_connections()
+    except ConnectionError as e:
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:410","message":"ConnectionError in fetch_render_repos","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        logger.error(f"FATAL: Cannot connect to database for render repos: {e}")
+        logger.error("Exiting workflow gracefully due to connection failure")
+        sys.exit(1)
     
     try:
         # Multi-strategy search: path + org + topic

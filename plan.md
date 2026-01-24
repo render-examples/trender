@@ -1,5 +1,6 @@
 TODO:
 - Get Render detection working. Ideally get all repos from a reasonable time frame i.e. created within the last 6 months
+    - Currently only picking up repos from internal Render orgs. Change this by eliminating Render topics filtering
 - Decide whether to render READMEs better (without images/tags) or remove entirely
 - Set up CRON job to run once a day
 - General code cleanup
