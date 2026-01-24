@@ -415,7 +415,7 @@ async def fetch_render_repos() -> List[Dict]:
             repo['uses_render'] = True
         
         # Store in raw layer
-        await store_raw_repos(repos, db_pool, source_type='render')
+        await store_raw_repos(repos, db_pool, source_type='render_ecosystem')
         
         # Analyze batch (stores in staging)
         analyzed = await analyze_repo_batch(repos)
