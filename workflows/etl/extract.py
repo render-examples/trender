@@ -27,13 +27,8 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 srv.language,
                 srv.description,
                 srv.stars,
-                srv.forks,
-                srv.open_issues,
                 srv.created_at,
                 srv.updated_at,
-                srv.commits_last_7_days,
-                srv.issues_closed_last_7_days,
-                srv.active_contributors,
                 srv.uses_render,
                 srv.readme_content,
                 srv.data_quality_score,
@@ -97,7 +92,39 @@ async def store_raw_metrics(repo_full_name: str, metric_type: str,
         metric_data: Metric data from GitHub API
         db_pool: Database connection pool
     """
+    # #region agent log
+    import time
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    json_str = json.dumps(metric_data)
+    payload_size_bytes = len(json_str.encode('utf-8'))
+    item_count = metric_data.get('count', 0)
+    
+    start_time = time.time()
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"extract.py:89","message":"store_raw_metrics ENTRY","data":{"repo":repo_full_name,"metric_type":metric_type,"item_count":item_count,"payload_size_bytes":payload_size_bytes,"pool_size":db_pool.get_size(),"pool_free":db_pool.get_size()-db_pool.get_idle_size()},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H2"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
+    # #region agent log
+    acquire_start = time.time()
+    # #endregion
+    
     async with db_pool.acquire() as conn:
+        # #region agent log
+        acquire_time = time.time() - acquire_start
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"extract.py:101","message":"DB connection acquired","data":{"repo":repo_full_name,"metric_type":metric_type,"acquire_time_ms":int(acquire_time*1000)},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H2,H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        # #region agent log
+        execute_start = time.time()
+        # #endregion
+        
         await conn.execute("""
             INSERT INTO raw_repo_metrics
                 (repo_full_name, metric_type, metric_data)
@@ -105,4 +132,14 @@ async def store_raw_metrics(repo_full_name: str, metric_type: str,
             ON CONFLICT (repo_full_name, metric_type) DO UPDATE SET
                 metric_data = EXCLUDED.metric_data,
                 fetch_timestamp = NOW()
-        """, repo_full_name, metric_type, json.dumps(metric_data))
+        """, repo_full_name, metric_type, json_str)
+        
+        # #region agent log
+        execute_time = time.time() - execute_start
+        total_time = time.time() - start_time
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"extract.py:108","message":"store_raw_metrics EXIT","data":{"repo":repo_full_name,"metric_type":metric_type,"execute_time_ms":int(execute_time*1000),"total_time_ms":int(total_time*1000)},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H3,H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion

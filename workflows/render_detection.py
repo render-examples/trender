@@ -22,6 +22,17 @@ def parse_render_yaml(render_yaml_content: str) -> Dict:
     Returns:
         Parsed configuration dictionary
     """
+    # #region agent log
+    import json
+    import time
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"render_detection.py:15","message":"parse_render_yaml ENTRY","data":{"content_length":len(render_yaml_content) if render_yaml_content else 0,"content_preview":render_yaml_content[:100] if render_yaml_content else None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     try:
         config = yaml.safe_load(render_yaml_content)
         if not config:
@@ -48,7 +59,14 @@ def parse_render_yaml(render_yaml_content: str) -> Dict:
             parsed['databases'].append(db_type)
 
         return parsed
-    except Exception:
+    except Exception as e:
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"render_detection.py:51","message":"parse_render_yaml EXCEPTION","data":{"error_type":type(e).__name__,"error_msg":str(e)[:300],"content_sample":render_yaml_content[:200] if render_yaml_content else None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
         return {}
 
 
@@ -185,7 +203,7 @@ def score_blueprint_quality(render_data: Dict) -> int:
     score = 0
 
     # Has render.yaml (3 points)
-    if render_data.get('render_yaml_content'):
+    if render_data.get('uses_render'):
         score += 3
 
     # Service count (up to 3 points)
@@ -251,6 +269,17 @@ async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
     """
     repo_full_name = repo_data.get('full_name', '')
     
+    # #region agent log
+    import json
+    import time
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"render_detection.py:239","message":"detect_render_usage ENTRY","data":{"repo":repo_full_name,"already_marked_render":repo_data.get('uses_render', False)},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     # If already marked as Render project (from search), verify and enrich
     if repo_data.get('uses_render'):
         logger.info(f"Repo {repo_full_name} marked as Render project, fetching render.yaml")
@@ -264,6 +293,14 @@ async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
     try:
         # Fetch render.yaml content
         render_yaml_content = await github_api.get_file_contents(owner, repo, 'render.yaml')
+        
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"render_detection.py:266","message":"render.yaml fetch result","data":{"repo":repo_full_name,"found":render_yaml_content is not None,"size":len(render_yaml_content) if render_yaml_content else 0},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
         
         if not render_yaml_content:
             # No render.yaml found
@@ -291,7 +328,6 @@ async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
         # Return full enrichment data
         return {
             'uses_render': True,
-            'render_yaml_content': render_yaml_content,
             'render_category': render_category,
             'services': render_config.get('services', []),
             'databases': render_config.get('databases', []),
@@ -301,6 +337,13 @@ async def detect_render_usage(repo_data: Dict, github_api, db_pool) -> Dict:
         }
         
     except Exception as e:
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"render_detection.py:304","message":"detect_render_usage EXCEPTION","data":{"repo":repo_full_name,"error_type":type(e).__name__,"error_msg":str(e)[:300]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
         logger.debug(f"Failed to fetch/parse render.yaml for {repo_full_name}: {e}")
         return {'uses_render': False}
 

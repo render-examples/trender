@@ -295,7 +295,17 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
         enriched_repos = []
 
         # Process repos in batches of 10
-        for batch in chunk_list(repos, size=10):
+        for batch_idx, batch in enumerate(chunk_list(repos, size=10)):
+            # #region agent log
+            import json
+            debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+            try:
+                with open(debug_log_path, 'a') as f:
+                    f.write(json.dumps({"location":"workflow.py:298","message":"Starting batch processing","data":{"batch_idx":batch_idx,"batch_size":len(batch),"repo_names":[r.get('full_name') for r in batch],"pool_size":db_pool.get_size(),"pool_idle":db_pool.get_idle_size()},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H2,H5"}) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             batch_tasks = [
                 analyze_single_repo(repo, github_api, db_pool, readme_contents.get(repo.get('full_name')))
                 for repo in batch
@@ -342,48 +352,52 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     
     owner, name = repo_full_name.split('/', 1)
 
-    # Fetch detailed metrics
-    since_date = datetime.now(timezone.utc) - timedelta(days=7)
-
-    # Parallel fetch of metrics (skip README if already provided)
+    # Fetch Render usage detection (no need for commits/issues/contributors)
+    # #region agent log
+    import json
+    import time
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:355","message":"Starting API calls","data":{"repo":repo_full_name,"has_readme":readme_content is not None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     if readme_content is not None:
         # README already fetched, don't call API again
-        commits, issues, contributors, render_data = await asyncio.gather(
-            github_api.get_commits(owner, name, since_date),
-            github_api.get_issues(owner, name, state='closed', since=since_date),
-            github_api.get_contributors(owner, name),
-            detect_render_usage(repo, github_api, db_pool),
-            return_exceptions=True
-        )
-        readme = readme_content
+        try:
+            render_data = await detect_render_usage(repo, github_api, db_pool)
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(debug_log_path, 'a') as f:
+                    f.write(json.dumps({"location":"workflow.py:358","message":"detect_render_usage exception","data":{"repo":repo_full_name,"error_type":type(e).__name__,"error_msg":str(e)[:200]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            render_data = {}
         
-        # Handle exceptions
-        commits = commits if not isinstance(commits, Exception) else []
-        issues = issues if not isinstance(issues, Exception) else []
-        contributors = contributors if not isinstance(contributors, Exception) else []
-        render_data = render_data if not isinstance(render_data, Exception) else {}
+        readme = readme_content
     else:
-        # Fetch README along with other metrics
-        commits, issues, contributors, render_data, readme = await asyncio.gather(
-            github_api.get_commits(owner, name, since_date),
-            github_api.get_issues(owner, name, state='closed', since=since_date),
-            github_api.get_contributors(owner, name),
+        # Fetch README along with Render detection
+        render_data, readme = await asyncio.gather(
             detect_render_usage(repo, github_api, db_pool),
             github_api.fetch_readme(owner, name),
             return_exceptions=True
         )
         
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:369","message":"API calls completed","data":{"repo":repo_full_name,"render_is_exception":isinstance(render_data, Exception),"readme_is_exception":isinstance(readme, Exception),"render_error":str(render_data)[:200] if isinstance(render_data, Exception) else None,"readme_error":str(readme)[:200] if isinstance(readme, Exception) else None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         # Handle exceptions
-        commits = commits if not isinstance(commits, Exception) else []
-        issues = issues if not isinstance(issues, Exception) else []
-        contributors = contributors if not isinstance(contributors, Exception) else []
         render_data = render_data if not isinstance(render_data, Exception) else {}
         readme = readme if not isinstance(readme, Exception) else None
-
-    # Store raw metrics
-    await store_raw_metrics(repo.get('full_name'), 'commits', {'count': len(commits), 'commits': commits}, db_pool)
-    await store_raw_metrics(repo.get('full_name'), 'issues', {'count': len(issues), 'issues': issues}, db_pool)
-    await store_raw_metrics(repo.get('full_name'), 'contributors', {'count': len(contributors), 'contributors': contributors}, db_pool)
 
     # Build enriched repo data
     enriched = {
@@ -393,15 +407,9 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'description': repo.get('description'),
         'readme_content': readme,
         'stars': repo.get('stargazers_count', 0),
-        'forks': repo.get('forks_count', 0),
-        'open_issues': repo.get('open_issues_count', 0),
         'created_at': repo.get('created_at'),
         'updated_at': repo.get('updated_at'),
-        'commits_last_7_days': len(commits),
-        'issues_closed_last_7_days': len(issues),
-        'active_contributors': len(contributors),
         'uses_render': render_data.get('uses_render', False),
-        'render_yaml_content': render_data.get('render_yaml_content'),
         **render_data
     }
     
@@ -448,29 +456,22 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO stg_repos_validated
-                (repo_full_name, repo_url, language, description, stars, forks,
-                 open_issues, created_at, updated_at, commits_last_7_days,
-                 issues_closed_last_7_days, active_contributors, uses_render,
-                 render_yaml_content, readme_content, data_quality_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                (repo_full_name, repo_url, language, description, stars,
+                 created_at, updated_at, uses_render,
+                 readme_content, data_quality_score)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (repo_full_name) DO UPDATE SET
                 stars = EXCLUDED.stars,
-                forks = EXCLUDED.forks,
-                open_issues = EXCLUDED.open_issues,
                 updated_at = EXCLUDED.updated_at,
-                commits_last_7_days = EXCLUDED.commits_last_7_days,
-                issues_closed_last_7_days = EXCLUDED.issues_closed_last_7_days,
-                active_contributors = EXCLUDED.active_contributors,
                 uses_render = EXCLUDED.uses_render,
                 readme_content = EXCLUDED.readme_content,
                 data_quality_score = EXCLUDED.data_quality_score,
                 loaded_at = NOW()
         """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
-            repo.get('description'), repo.get('stars', 0), repo.get('forks', 0),
-            repo.get('open_issues', 0), repo.get('created_at'), repo.get('updated_at'),
-            repo.get('commits_last_7_days', 0), repo.get('issues_closed_last_7_days', 0),
-            repo.get('active_contributors', 0), repo.get('uses_render', False),
-            repo.get('render_yaml_content'), repo.get('readme_content'), repo.get('data_quality_score', 0.0))
+            repo.get('description'), repo.get('stars', 0),
+            repo.get('created_at'), repo.get('updated_at'),
+            repo.get('uses_render', False),
+            repo.get('readme_content'), repo.get('data_quality_score', 0.0))
 
 
 @task
@@ -566,8 +567,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.language,
                 srv.description,
                 srv.stars,
-                srv.forks,
-                srv.open_issues,
                 srv.created_at,
                 srv.updated_at,
                 srv.uses_render,
@@ -743,16 +742,15 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
             # Insert fact snapshot with calculated momentum score
             await conn.execute("""
                 INSERT INTO fact_repo_snapshots
-                    (repo_key, language_key, snapshot_date, stars, forks,
+                    (repo_key, language_key, snapshot_date, stars,
                      star_velocity, activity_score, momentum_score,
                      rank_overall, rank_in_language)
-                VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7, NULL)
+                VALUES ($1, $2, $3, $4, 0, 0, $5, $6, NULL)
                 ON CONFLICT (repo_key, snapshot_date) DO UPDATE SET
                     stars = EXCLUDED.stars,
-                    forks = EXCLUDED.forks,
                     momentum_score = EXCLUDED.momentum_score,
                     rank_overall = EXCLUDED.rank_overall
-            """, repo_key, language_key, today, repo['stars'], repo['forks'], momentum_score, idx)
+            """, repo_key, language_key, today, repo['stars'], momentum_score, idx)
             
             # If Render repo, also populate fact_render_usage
             if uses_render and repo.get('render_services'):

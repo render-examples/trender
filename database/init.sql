@@ -33,7 +33,7 @@
 \echo ''
 \echo 'RAW LAYER (2 tables):'
 \echo '  - raw_github_repos: Complete GitHub API responses (JSONB)'
-\echo '  - raw_repo_metrics: Detailed metrics (commits, issues, contributors)'
+\echo '  - raw_repo_metrics: Detailed metrics counts (commits, issues, contributors)'
 \echo ''
 \echo 'STAGING LAYER (2 tables):'
 \echo '  - stg_repos_validated: Cleaned repos with quality scores'

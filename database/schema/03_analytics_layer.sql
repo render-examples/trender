@@ -78,13 +78,9 @@ CREATE TABLE IF NOT EXISTS fact_repo_snapshots (
   language_key INTEGER NOT NULL REFERENCES dim_languages(language_key),
   snapshot_date DATE NOT NULL,
   stars INTEGER NOT NULL,
-  forks INTEGER,
   star_velocity DECIMAL(7,2), -- stars gained per day
   activity_score DECIMAL(7,2),
   momentum_score DECIMAL(7,2),
-  commits_last_7_days INTEGER,
-  issues_closed_last_7_days INTEGER,
-  active_contributors INTEGER,
   rank_overall INTEGER,
   rank_in_language INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
