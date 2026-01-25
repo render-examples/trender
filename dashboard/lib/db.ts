@@ -82,6 +82,7 @@ export async function getTopRepos(
   let queryText = `
     SELECT * FROM analytics_trending_repos_current
     WHERE 1=1
+    AND repo_full_name !~ '^vercel'
   `;
 
   const params: any[] = [];
@@ -97,7 +98,7 @@ export async function getTopRepos(
     queryText += ` AND language = 'render'`;
   }
 
-  queryText += ` ORDER BY momentum_score DESC LIMIT $${paramIndex}`;
+  queryText += ` ORDER BY stars DESC LIMIT $${paramIndex}`;
   params.push(limit);
 
   const result = await query<Repository>(queryText, params);
@@ -110,6 +111,7 @@ export async function getTopRepos(
 export async function getRenderShowcase(limit: number = 50): Promise<any[]> {
   const result = await query(
     `SELECT * FROM analytics_render_showcase
+     WHERE repo_full_name !~ '^vercel/'
      ORDER BY momentum_score DESC
      LIMIT $1`,
     [limit]
@@ -133,7 +135,9 @@ export async function getLanguageStats(): Promise<any[]> {
  */
 export async function getRepoDetails(fullName: string): Promise<Repository | null> {
   const result = await query<Repository>(
-    `SELECT * FROM analytics_trending_repos_current WHERE repo_full_name = $1`,
+    `SELECT * FROM analytics_trending_repos_current 
+     WHERE repo_full_name = $1 
+     AND repo_full_name !~ '^vercel'`,
     [fullName]
   );
   return result.rows[0] || null;
@@ -163,6 +167,7 @@ export async function getLanguageTopRepos(
   const result = await query<Repository>(
     `SELECT * FROM analytics_language_rankings
      WHERE language_name = $1
+     AND repo_full_name !~ '^vercel'
      ORDER BY rank_in_language
      LIMIT $2`,
     [language, limit]
@@ -180,12 +185,14 @@ export async function getEcosystemStats(): Promise<{
 }> {
   const totalResult = await query(
     `SELECT COUNT(*) as total_projects, SUM(stars) as total_stars
-     FROM analytics_render_showcase`
+     FROM analytics_render_showcase
+     WHERE repo_full_name !~ '^vercel/'`
   );
 
   const categoryResult = await query(
     `SELECT render_category, COUNT(*) as count, SUM(stars) as total_stars
      FROM analytics_render_showcase
+     WHERE repo_full_name !~ '^vercel/'
      GROUP BY render_category
      ORDER BY total_stars DESC`
   );
@@ -207,13 +214,15 @@ export async function getDashboardStats(): Promise<{
 }> {
   const totalReposResult = await query(
     `SELECT COUNT(*) as total_repos, MAX(last_updated) as last_updated
-     FROM analytics_trending_repos_current`
+     FROM analytics_trending_repos_current
+     WHERE repo_full_name !~ '^vercel/'`
   );
 
   const renderReposResult = await query(
     `SELECT COUNT(*) as render_repos
      FROM analytics_trending_repos_current
-     WHERE language = 'render'`
+     WHERE language = 'render'
+     AND repo_full_name !~ '^vercel'`
   );
 
   return {
@@ -233,7 +242,8 @@ export async function getTopReposByLanguage(
   const result = await query<Repository>(
     `SELECT * FROM analytics_trending_repos_current
      WHERE language = $1
-     ORDER BY momentum_score DESC
+     AND repo_full_name !~ '^vercel'
+     ORDER BY stars DESC
      LIMIT $2`,
     [language, limit]
   );

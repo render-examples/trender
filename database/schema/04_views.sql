@@ -24,6 +24,7 @@ FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 WHERE dr.is_current = TRUE
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
+  AND dr.repo_full_name !~ '^vercel'
 ORDER BY fs.momentum_score DESC;
 
 -- View: analytics_render_showcase
@@ -52,6 +53,7 @@ LEFT JOIN stg_render_enrichment sre ON dr.repo_full_name = sre.repo_full_name
 WHERE dr.is_current = TRUE
   AND dr.language = 'render'
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
+  AND dr.repo_full_name !~ '^vercel'
 ORDER BY fs.momentum_score DESC;
 
 -- View: analytics_language_rankings
@@ -76,6 +78,7 @@ JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 WHERE dr.is_current = TRUE
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
   AND fs.rank_in_language <= 50
+  AND dr.repo_full_name !~ '^vercel'
 ORDER BY dl.language_name, fs.rank_in_language;
 
 -- View: analytics_render_services_adoption
@@ -108,7 +111,7 @@ SELECT
   COUNT(CASE WHEN dr.language = 'render' THEN 1 END) as render_projects,
   ROUND((COUNT(CASE WHEN dr.language = 'render' THEN 1 END)::DECIMAL / NULLIF(COUNT(DISTINCT dr.repo_key), 0)) * 100, 2) as render_adoption_percentage
 FROM dim_languages dl
-LEFT JOIN dim_repositories dr ON dl.language_name = dr.language AND dr.is_current = TRUE
+LEFT JOIN dim_repositories dr ON dl.language_name = dr.language AND dr.is_current = TRUE AND dr.repo_full_name !~ '^vercel'
 LEFT JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 WHERE fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
    OR fs.snapshot_date IS NULL
@@ -131,4 +134,5 @@ SELECT
 FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 WHERE dr.is_current = TRUE
+  AND dr.repo_full_name !~ '^vercel'
 ORDER BY dr.repo_full_name, fs.snapshot_date DESC;
