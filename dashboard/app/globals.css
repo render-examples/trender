@@ -256,6 +256,12 @@ html {
   .repo-card-expanded {
     width: min(90vw, 550px);
   }
+
+  /* Thicker borders on mobile */
+  .repo-card-collapsed,
+  .repo-card-expanded {
+    border-width: 2px !important;
+  }
 }
 
 @media (max-width: 640px) {
@@ -265,6 +271,12 @@ html {
 
   .repo-card-expanded {
     width: min(90vw, 500px);
+  }
+
+  /* Thicker borders on mobile */
+  .repo-card-collapsed,
+  .repo-card-expanded {
+    border-width: 2px !important;
   }
 }
 
