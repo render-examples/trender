@@ -614,22 +614,33 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
                 WHERE repo_full_name = $1 AND is_current = TRUE
             """, repo_name)
             
+            if not repo_key:
+                # region agent log
+                lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
+                failed_loads[lang_bucket] += 1
+                logger.warning(f"[DEBUG-A,C] SKIP: Missing repo_key for {repo_name}")
+                # endregion
+                continue
+            
+            # Get or create language_key (auto-insert unknown languages)
             language_key = await conn.fetchval("""
                 SELECT language_key FROM dim_languages
                 WHERE language_name = $1
             """, repo['language'])
             
+            if not language_key:
+                # Auto-insert unknown language
+                language_key = await conn.fetchval("""
+                    INSERT INTO dim_languages (language_name, language_category, ecosystem_size)
+                    VALUES ($1, 'general', 'medium')
+                    ON CONFLICT (language_name) DO UPDATE SET language_name = EXCLUDED.language_name
+                    RETURNING language_key
+                """, repo['language'])
+                logger.info(f"Auto-created language entry for: {repo['language']}")
+            
             # region agent log
             logger.info(f"[DEBUG-C] Key lookup: repo={repo_name}, lang={repo_lang}, repo_key={repo_key}, lang_key={language_key}")
             # endregion
-            
-            if not repo_key or not language_key:
-                # region agent log
-                lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
-                failed_loads[lang_bucket] += 1
-                logger.warning(f"[DEBUG-A,C] SKIP: Missing key for repo={repo_name}, lang={repo_lang}, repo_key={repo_key}, lang_key={language_key}")
-                # endregion
-                continue
             
             # Calculate momentum score using star-recency formula
             stars = repo.get('stars', 0)

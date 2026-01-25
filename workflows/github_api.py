@@ -298,8 +298,7 @@ class GitHubAPIClient:
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
-    async def search_repos_by_path(self, filename: str, limit: int = 50,
-                                    pushed_since: datetime = None) -> List[Dict]:
+    async def search_repos_by_path(self, filename: str, limit: int = 50) -> List[Dict]:
         """
         Search for repositories containing a file using repository search with path: qualifier.
         More efficient than code search - single API call, direct repo results.
@@ -307,22 +306,15 @@ class GitHubAPIClient:
         Args:
             filename: Filename to search for (e.g., 'render.yaml')
             limit: Maximum number of results
-            pushed_since: Only include repos with activity since this date (default: 6 months ago)
         
         Returns:
             List of repository data dictionaries ordered by stars descending
         """
-        # Default to last 6 months for active Render projects
-        if not pushed_since:
-            pushed_since = datetime.now(timezone.utc) - timedelta(days=180)
-        
-        date_str = pushed_since.strftime('%Y-%m-%d')
-        
-        # Repository search with path: qualifier and date filter
-        query = f"path:{filename} pushed:>={date_str}"
+        # Repository search with path: qualifier - no date filter
+        query = f"path:{filename}"
         url = f"{self.base_url}/search/repositories?q={query}&sort=stars&order=desc&per_page={min(limit, 100)}"
         
-        logger.info(f"Searching repositories with path:{filename}, pushed since {date_str}")
+        logger.info(f"Searching repositories with path:{filename} (no date filter)")
         
         result = await self._api_call(url)
         
@@ -341,7 +333,7 @@ class GitHubAPIClient:
         Combines multiple search strategies to maximize coverage.
         
         Strategies:
-        1. Repository search with path:render.yaml (recently active repos)
+        1. Repository search with path:render.yaml (all dates, sorted by stars)
         2. render-examples organization (official examples)
         3. Topic search (community repos tagged with render)
         
@@ -356,7 +348,7 @@ class GitHubAPIClient:
         
         logger.info("=== STRATEGY 1: Repository search with path:render.yaml ===")
         try:
-            # Strategy 1: Path-based search (last 6 months of activity)
+            # Strategy 1: Path-based search (no date filter, sorted by stars)
             repos_by_path = await self.search_repos_by_path('render.yaml', limit=30)
             for repo in repos_by_path:
                 full_name = repo.get('full_name')

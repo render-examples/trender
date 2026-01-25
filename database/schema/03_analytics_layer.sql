@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS dim_languages (
 );
 
 -- Seed data for dim_languages
+-- Only seed the 3 target languages; others will be auto-created by the workflow as needed
 INSERT INTO dim_languages (language_name, language_category, ecosystem_size) VALUES
   ('Python', 'general', 'large'),
   ('TypeScript', 'web', 'large'),
