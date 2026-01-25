@@ -523,13 +523,12 @@ The orchestrator runs 4 parallel tasks (3 languages + 1 Render ecosystem), then 
 
 ### Render Ecosystem Discovery
 
-The `fetch_render_repos` task uses a multi-strategy approach to discover Render projects:
+The `fetch_render_repos` task uses a 2-strategy approach to discover Render projects:
 
-1. **Repository Search with path: qualifier** - Searches for repos containing `render.yaml` with recent activity (last 6 months)
-2. **render-examples Organization** - Fetches official Render example repositories (high quality blueprints)
-3. **Topic Search** - Finds community repos tagged with `render-blueprints` topic
+1. **Code Search for render.yaml** - Uses GitHub's code search API to find repositories with `render.yaml` **in the root directory only**. This ensures we only capture repos that are properly configured for Render deployment. Results are sorted by stars descending.
+2. **Topic Search** - Finds community repos tagged with `render-blueprints` topic
 
-This approach maximizes coverage and ensures we capture both official and community Render projects. When a Render repo is found, the system:
+This approach ensures accuracy (only repos with actual render.yaml files) and maximizes coverage of community projects. When a Render repo is found, the system:
 
 - Fetches and parses the `render.yaml` file to extract service configurations
 - Calculates complexity scores based on number and type of services
@@ -597,7 +596,7 @@ psql $DATABASE_URL -f database/cleanup_workflow_tracking.sql
 - 4x parallel task execution (Python, TypeScript, Go, Render)
 - 3-layer data pipeline with dimensional modeling (9 tables + 6 views)
 - Data quality score >= 0.70 for all loaded repositories
-- Multi-strategy Render discovery (path search + org repos + topics)
+- Accurate Render discovery using code search (only root-level render.yaml files)
 
 **Marketing:**
 - Showcase trending Render ecosystem projects (render.yaml repositories)

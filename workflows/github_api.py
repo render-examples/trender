@@ -300,8 +300,8 @@ class GitHubAPIClient:
 
     async def search_repos_by_path(self, filename: str, limit: int = 50) -> List[Dict]:
         """
-        Search for repositories containing a file using repository search with path: qualifier.
-        More efficient than code search - single API call, direct repo results.
+        Search for repositories containing a file in the root directory using code search.
+        Uses GitHub's code search API which properly supports filename matching.
         
         Args:
             filename: Filename to search for (e.g., 'render.yaml')
@@ -310,22 +310,43 @@ class GitHubAPIClient:
         Returns:
             List of repository data dictionaries ordered by stars descending
         """
-        # Repository search with path: qualifier - no date filter
-        query = f"path:{filename}"
-        url = f"{self.base_url}/search/repositories?q={query}&sort=stars&order=desc&per_page={min(limit, 100)}"
+        # Use code search API which properly supports path/filename matching
+        query = f"filename:{filename}"
+        url = f"{self.base_url}/search/code?q={query}&per_page=100"
         
-        logger.info(f"Searching repositories with path:{filename} (no date filter)")
+        logger.info(f"Searching for {filename} using code search API")
         
         result = await self._api_call(url)
         
         if not result or 'items' not in result:
-            logger.warning(f"Repository search returned no results for path:{filename}")
+            logger.warning(f"Code search returned no results for {filename}")
             return []
         
-        items = result.get('items', [])
-        logger.info(f"Found {len(items)} repos with {filename}")
+        # Extract unique repositories from code search results
+        seen_repos = set()
+        repos = []
         
-        return items[:limit]
+        for item in result.get('items', []):
+            repo_data = item.get('repository', {})
+            repo_full_name = repo_data.get('full_name')
+            
+            # Only include each repo once, and check if file is in root
+            if repo_full_name and repo_full_name not in seen_repos:
+                # Check if the file path is in root (no subdirectories)
+                file_path = item.get('path', '')
+                if file_path == filename:  # Exact match, no path prefix
+                    seen_repos.add(repo_full_name)
+                    repos.append(repo_data)
+                    
+                    if len(repos) >= limit:
+                        break
+        
+        # Sort by stars descending to prioritize quality
+        repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
+        
+        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory")
+        
+        return repos[:limit]
     
     async def search_render_ecosystem(self, limit: int = 50) -> List[Dict]:
         """
@@ -333,9 +354,8 @@ class GitHubAPIClient:
         Combines multiple search strategies to maximize coverage.
         
         Strategies:
-        1. Repository search with path:render.yaml (all dates, sorted by stars)
-        2. render-examples organization (official examples)
-        3. Topic search (community repos tagged with render)
+        1. Code search for render.yaml in root directory (sorted by stars)
+        2. Topic search (community repos tagged with render)
         
         Args:
             limit: Maximum number of results to return
@@ -346,44 +366,31 @@ class GitHubAPIClient:
         all_repos = []
         seen_repos = set()
         
-        logger.info("=== STRATEGY 1: Repository search with path:render.yaml ===")
+        logger.info("=== STRATEGY 1: Code search for render.yaml in root ===")
         try:
-            # Strategy 1: Path-based search (no date filter, sorted by stars)
-            repos_by_path = await self.search_repos_by_path('render.yaml', limit=30)
-            for repo in repos_by_path:
+            # Strategy 1: Code search for render.yaml in root (sorted by stars)
+            repos_by_code = await self.search_repos_by_path('render.yaml', limit=limit)
+            for repo in repos_by_code:
                 full_name = repo.get('full_name')
                 if full_name and full_name not in seen_repos:
                     seen_repos.add(full_name)
                     all_repos.append(repo)
-            logger.info(f"Strategy 1: Found {len(repos_by_path)} repos via path search")
+            logger.info(f"Strategy 1: Found {len(repos_by_code)} repos via code search")
         except Exception as e:
             logger.warning(f"Strategy 1 failed: {e}")
         
-        logger.info("=== STRATEGY 2: render-examples organization ===")
+        logger.info("=== STRATEGY 2: Topic-based search ===")
         try:
-            # Strategy 2: Official render-examples org (high quality)
-            render_examples = await self.get_org_repos('render-examples')
-            for repo in render_examples:
-                full_name = repo.get('full_name')
-                if full_name and full_name not in seen_repos:
-                    seen_repos.add(full_name)
-                    all_repos.append(repo)
-            logger.info(f"Strategy 2: Found {len(render_examples)} repos from render-examples org")
-        except Exception as e:
-            logger.warning(f"Strategy 2 failed: {e}")
-        
-        logger.info("=== STRATEGY 3: Topic-based search ===")
-        try:
-            # Strategy 3: Topic search (community projects)
+            # Strategy 2: Topic search (community projects)
             repos_by_topic = await self.search_by_topic('render-blueprints')
             for repo in repos_by_topic:
                 full_name = repo.get('full_name')
                 if full_name and full_name not in seen_repos:
                     seen_repos.add(full_name)
                     all_repos.append(repo)
-            logger.info(f"Strategy 3: Found {len(repos_by_topic)} repos via topic search")
+            logger.info(f"Strategy 2: Found {len(repos_by_topic)} repos via topic search")
         except Exception as e:
-            logger.warning(f"Strategy 3 failed: {e}")
+            logger.warning(f"Strategy 2 failed: {e}")
         
         # Sort by stars descending to prioritize quality
         all_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
