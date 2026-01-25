@@ -413,6 +413,14 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         **render_data
     }
     
+    # #region agent log
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:415","message":"enriched repo data built","data":{"repo":repo_full_name,"initial_uses_render":repo.get('uses_render',False),"render_data_uses_render":render_data.get('uses_render',False),"final_uses_render":enriched['uses_render']},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H3,H4"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     # Parse ISO datetime strings to timezone-aware datetime objects for PostgreSQL
     # GitHub API returns ISO 8601 with 'Z' suffix (UTC timezone)
     # Keep timezone-aware for TIMESTAMPTZ columns
@@ -453,6 +461,17 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
 
 async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
     """Store enriched repository data in staging layer."""
+    # #region agent log
+    import json
+    import time
+    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(json.dumps({"location":"workflow.py:454","message":"store_in_staging ENTRY","data":{"repo":repo.get('repo_full_name'),"uses_render":repo.get('uses_render',False),"quality_score":repo.get('data_quality_score',0.0)},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H3"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO stg_repos_validated
@@ -472,6 +491,14 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
             repo.get('created_at'), repo.get('updated_at'),
             repo.get('uses_render', False),
             repo.get('readme_content'), repo.get('data_quality_score', 0.0))
+        
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:474","message":"store_in_staging COMPLETE","data":{"repo":repo.get('repo_full_name')},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H3,H5"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
 
 
 @task
@@ -524,6 +551,14 @@ async def fetch_render_repos() -> List[Dict]:
         for repo in repos:
             repo['uses_render'] = True
         
+        # #region agent log
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:528","message":"fetch_render_repos - marked repos as Render","data":{"count":len(repos),"sample_repos":[r.get('full_name') for r in repos[:5]]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H4"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         # Store in raw layer
         await store_raw_repos(repos, db_pool, source_type='render_ecosystem')
         
@@ -557,6 +592,21 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     logger.info(f"Successful tasks: {successful_tasks}/{len(all_results)}")
     
     async with db_pool.acquire() as conn:
+        # #region agent log
+        import json
+        import time
+        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+        
+        # Check what's in staging BEFORE extraction
+        staging_count = await conn.fetchval("SELECT COUNT(*) FROM stg_repos_validated WHERE uses_render = TRUE")
+        staging_render_repos = await conn.fetch("SELECT repo_full_name, uses_render, data_quality_score FROM stg_repos_validated WHERE uses_render = TRUE LIMIT 10")
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:559","message":"aggregate_results - staging state","data":{"render_repos_in_staging":staging_count,"sample_repos":[dict(r) for r in staging_render_repos]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H2,H3"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         # Extract all high-quality repos from staging (no date filtering)
         # Join with render enrichment to get full data
         # Pull top 50 per language = 150 total repos
@@ -584,6 +634,15 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
             LIMIT 150
         """)
         
+        # #region agent log
+        render_repos_extracted = sum(1 for r in repos if r.get('uses_render'))
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:588","message":"aggregate_results - extraction complete","data":{"total_extracted":len(repos),"render_repos_extracted":render_repos_extracted},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         logger.info(f"Extracted {len(repos)} recent repos from staging")
         
         if not repos:
@@ -598,14 +657,19 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
         await load_to_analytics_simple(repos, conn)
         
         # region agent log
-        lang_counts_analytics = await conn.fetch("""
-            SELECT language, COUNT(*) as count 
-            FROM dim_repositories 
-            WHERE is_current = TRUE 
-            GROUP BY language
-        """)
-        lang_dict = {row['language']: row['count'] for row in lang_counts_analytics}
-        logger.info(f"[DEBUG-B,D] Final analytics table state: dim_repositories={lang_dict}")
+        import json
+        import time
+        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+        
+        # Check analytics tables AFTER load
+        analytics_render_count = await conn.fetchval("SELECT COUNT(*) FROM dim_repositories WHERE is_current = TRUE AND uses_render = TRUE")
+        analytics_render_repos = await conn.fetch("SELECT repo_full_name, uses_render, language FROM dim_repositories WHERE is_current = TRUE AND uses_render = TRUE LIMIT 10")
+        
+        try:
+            with open(debug_log_path, 'a') as f:
+                f.write(json.dumps({"location":"workflow.py:609","message":"aggregate_results - analytics state AFTER load","data":{"render_repos_in_analytics":analytics_render_count,"sample_repos":[dict(r) for r in analytics_render_repos]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
+        except Exception:
+            pass
         # endregion
         
         return {
