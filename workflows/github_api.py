@@ -243,14 +243,14 @@ class GitHubAPIClient:
 
     async def fetch_readme(self, owner: str, repo: str) -> Optional[str]:
         """
-        Fetch README.md content (case insensitive), return first 80 words only.
+        Fetch README.md content (case insensitive), return first 5000 characters only.
         
         Args:
             owner: Repository owner
             repo: Repository name
         
         Returns:
-            First 80 words of README, or None if not found
+            First 5000 characters of README, or None if not found
         """
         try:
             url = f"{self.base_url}/repos/{owner}/{repo}/contents/"
@@ -277,9 +277,8 @@ class GitHubAPIClient:
             async with self.session.get(content_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     text = await response.text()
-                    # Return first 80 words
-                    words = text.split()[:80]
-                    return ' '.join(words)
+                    # Return first 5000 characters
+                    return text[:5000]
             
             return None
         except Exception as e:
