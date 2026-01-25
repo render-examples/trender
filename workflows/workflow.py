@@ -289,6 +289,14 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         logger.warning(f"Skipping repo {repo_full_name} without language (should have been filtered earlier)")
         return None
     
+    # Validate required timestamp fields
+    if not repo.get('created_at'):
+        logger.warning(f"Skipping repo {repo_full_name} without created_at timestamp")
+        return None
+    if not repo.get('updated_at'):
+        logger.warning(f"Skipping repo {repo_full_name} without updated_at timestamp")
+        return None
+    
     owner, name = repo_full_name.split('/', 1)
     
     # Fetch README if not provided

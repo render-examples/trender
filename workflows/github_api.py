@@ -8,7 +8,7 @@ import asyncio
 import base64
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -329,6 +329,7 @@ class GitHubAPIClient:
         
         Returns:
             List of repository data dictionaries ordered by stars descending
+            All repos will have required fields: created_at, updated_at, description
         """
         # Use code search API which properly supports path/filename matching
         query = f"filename:{filename}"
@@ -351,6 +352,7 @@ class GitHubAPIClient:
         seen_repos = set()
         repos = []
         repos_without_language = 0
+        repos_needing_details = []
         
         for item in result.get('items', []):
             repo_data = item.get('repository', {})
@@ -372,20 +374,56 @@ class GitHubAPIClient:
                 file_path = item.get('path', '')
                 if file_path == filename:  # Exact match, no path prefix
                     seen_repos.add(repo_full_name)
+                    
+                    # Code search results don't include created_at, updated_at - need to fetch full details
+                    if not repo_data.get('created_at') or not repo_data.get('updated_at'):
+                        repos_needing_details.append(repo_full_name)
+                    
                     repos.append(repo_data)
                     
                     if len(repos) >= limit:
                         break
         
+        # Fetch full details for repos missing required fields
+        if repos_needing_details:
+            logger.info(f"Fetching full details for {len(repos_needing_details)} repos with missing fields")
+            for repo_full_name in repos_needing_details:
+                try:
+                    owner, name = repo_full_name.split('/', 1)
+                    full_details = await self.get_repo_details(owner, name)
+                    
+                    if full_details:
+                        # Update the repo in our list with full details
+                        for i, repo in enumerate(repos):
+                            if repo.get('full_name') == repo_full_name:
+                                # Preserve the language assignment (e.g., 'render')
+                                preserved_language = repo.get('language')
+                                repos[i] = full_details
+                                if default_language and preserved_language == default_language:
+                                    repos[i]['language'] = default_language
+                                break
+                except Exception as e:
+                    logger.warning(f"Failed to fetch details for {repo_full_name}: {e}")
+                    # Remove this repo from results since it lacks required fields
+                    repos = [r for r in repos if r.get('full_name') != repo_full_name]
+        
+        # Final validation: ensure all repos have required fields
+        validated_repos = []
+        for repo in repos:
+            if repo.get('created_at') and repo.get('updated_at'):
+                validated_repos.append(repo)
+            else:
+                logger.warning(f"Dropping repo {repo.get('full_name')} - missing required timestamps")
+        
         # Sort by stars descending to prioritize quality
-        repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
+        validated_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
         if repos_without_language > 0:
             logger.info(f"Filtered out {repos_without_language} repos without language")
         
-        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory")
+        logger.info(f"Found {len(validated_repos)} unique repos with {filename} in root directory")
         
-        return repos[:limit]
+        return validated_repos[:limit]
     
     async def search_render_ecosystem(self, limit: int = 50, created_since: datetime = None) -> List[Dict]:
         """
