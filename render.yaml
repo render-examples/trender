@@ -33,11 +33,11 @@ services:
       - key: DEV_REPO_LIMIT
         value: 5
 
-  # Cron Job - Hourly Analysis Trigger
+  # Cron Job - Daily Analysis Trigger (6 AM PST / 14:00 UTC)
   - type: cron
-    name: trender-analyzer-cron
+    name: trender-cron
     runtime: python
-    schedule: "0 * * * *"
+    schedule: "0 14 * * *"
     buildCommand: cd trigger && pip install -r requirements.txt
     startCommand: cd trigger && python trigger.py
     envVars:
