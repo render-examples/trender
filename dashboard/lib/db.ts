@@ -61,7 +61,6 @@ export interface Repository {
   momentum_score: number;
   description: string;
   readme_content: string | null;
-  uses_render: boolean;
   render_category: string | null;
   rank_overall: number;
   rank_in_language: number;
@@ -95,7 +94,7 @@ export async function getTopRepos(
   }
 
   if (renderOnly) {
-    queryText += ` AND uses_render = true`;
+    queryText += ` AND language = 'render'`;
   }
 
   queryText += ` ORDER BY momentum_score DESC LIMIT $${paramIndex}`;
@@ -214,7 +213,7 @@ export async function getDashboardStats(): Promise<{
   const renderReposResult = await query(
     `SELECT COUNT(*) as render_repos
      FROM analytics_trending_repos_current
-     WHERE uses_render = true`
+     WHERE language = 'render'`
   );
 
   return {

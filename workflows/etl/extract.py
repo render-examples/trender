@@ -29,7 +29,6 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 srv.stars,
                 srv.created_at,
                 srv.updated_at,
-                srv.uses_render,
                 srv.readme_content,
                 sre.render_category,
                 sre.render_services,

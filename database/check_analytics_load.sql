@@ -21,7 +21,6 @@ ORDER BY language;
 SELECT 
     repo_full_name,
     language,
-    uses_render,
     created_at
 FROM dim_repositories
 WHERE is_current = TRUE

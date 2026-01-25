@@ -5,7 +5,7 @@
 SELECT 
     language,
     COUNT(*) as total_repos,
-    COUNT(CASE WHEN uses_render THEN 1 END) as render_repos,
+    COUNT(CASE WHEN language = 'render' THEN 1 END) as render_repos,
     AVG(stars) as avg_stars
 FROM stg_repos_validated
 GROUP BY language
@@ -31,7 +31,6 @@ SELECT
     commits_last_7_days,
     issues_closed_last_7_days,
     active_contributors,
-    uses_render,
     created_at,
     loaded_at,
     CASE 
@@ -58,7 +57,6 @@ SELECT
     commits_last_7_days,
     issues_closed_last_7_days,
     active_contributors,
-    uses_render,
     created_at,
     loaded_at,
     CASE 
@@ -85,7 +83,6 @@ SELECT
     commits_last_7_days,
     issues_closed_last_7_days,
     active_contributors,
-    uses_render,
     created_at,
     loaded_at,
     CASE 
