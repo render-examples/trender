@@ -24,6 +24,24 @@ def chunk_list(items: List, size: int) -> List[List]:
     return [items[i:i + size] for i in range(0, len(items), size)]
 
 
+async def init_connections_with_error_handling():
+    """
+    Initialize connections with consistent error handling.
+    
+    Returns:
+        Tuple of (GitHubAPIClient, asyncpg.Pool)
+        
+    Raises:
+        SystemExit: If connection fails (exits gracefully with status 1)
+    """
+    try:
+        return await init_connections()
+    except ConnectionError as e:
+        logger.error(f"FATAL: Cannot connect to database: {e}")
+        logger.error("Exiting workflow gracefully due to connection failure")
+        sys.exit(1)
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -62,15 +80,8 @@ async def main_analysis_task() -> Dict:
             logger.info("Python task completed, starting ETL pipeline")
             
             # Initialize connections for ETL pipeline
-            try:
-                github_api, db_pool = await init_connections()
-                logger.info("Connections initialized for ETL pipeline")
-            except ConnectionError as e:
-                logger.error(f"FATAL: Cannot connect to database: {e}")
-                logger.error("Exiting workflow gracefully due to connection failure")
-                
-                # Exit gracefully with error status
-                sys.exit(1)
+            github_api, db_pool = await init_connections_with_error_handling()
+            logger.info("Connections initialized for ETL pipeline")
             
             # Run ETL pipeline: Extract from staging → Transform → Load to analytics
             final_result = await aggregate_results([python_result], db_pool, execution_start)
@@ -110,13 +121,8 @@ async def main_analysis_task() -> Dict:
                     logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_yaml_search'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
             # Aggregate and store final results
-            try:
-                github_api, db_pool = await init_connections()
-                logger.info("Connections initialized for aggregation")
-            except ConnectionError as e:
-                logger.error(f"FATAL: Cannot connect to database for aggregation: {e}")
-                logger.error("Exiting workflow gracefully due to connection failure")
-                sys.exit(1)
+            github_api, db_pool = await init_connections_with_error_handling()
+            logger.info("Connections initialized for aggregation")
             
             final_result = await aggregate_results(results, db_pool, execution_start)
 
@@ -143,12 +149,7 @@ async def fetch_language_repos(language: str) -> List[Dict]:
     logger.info(f"fetch_language_repos START for {language}")
     
     # Initialize connections for this task
-    try:
-        github_api, db_pool = await init_connections()
-    except ConnectionError as e:
-        logger.error(f"FATAL: Cannot connect to database for {language}: {e}")
-        logger.error("Exiting workflow gracefully due to connection failure")
-        sys.exit(1)
+    github_api, db_pool = await init_connections_with_error_handling()
     
     try:
         # Search GitHub API (API now filters out repos without language)
@@ -277,27 +278,27 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     Returns:
         Enriched repository dictionary
     """
-    # Validate repo_full_name exists
+    # Validate repo_full_name exists and is well-formed
     repo_full_name = repo.get('full_name')
-    if not repo_full_name or '/' not in repo_full_name:
+    if not (repo_full_name and '/' in repo_full_name):
         logger.warning(f"Skipping repo with invalid full_name: {repo_full_name}")
         return None
     
-    # Validate language exists (should have been filtered earlier, but double-check)
-    language = repo.get('language')
-    if not language:
-        logger.warning(f"Skipping repo {repo_full_name} without language (should have been filtered earlier)")
-        return None
+    # Validate all required fields are present
+    required_fields = {
+        'language': repo.get('language'),
+        'created_at': repo.get('created_at'),
+        'updated_at': repo.get('updated_at')
+    }
     
-    # Validate required timestamp fields
-    if not repo.get('created_at'):
-        logger.warning(f"Skipping repo {repo_full_name} without created_at timestamp")
-        return None
-    if not repo.get('updated_at'):
-        logger.warning(f"Skipping repo {repo_full_name} without updated_at timestamp")
-        return None
+    for field_name, field_value in required_fields.items():
+        if not field_value:
+            logger.warning(f"Skipping repo {repo_full_name} - missing {field_name}")
+            return None
     
+    # Extract validated values
     owner, name = repo_full_name.split('/', 1)
+    language = required_fields['language']
     
     # Fetch README if not provided
     if readme_content is None:
@@ -375,12 +376,7 @@ async def fetch_render_repos() -> List[Dict]:
     logger.info("fetch_render_repos START - code search for render.yaml")
     
     # Initialize connections
-    try:
-        github_api, db_pool = await init_connections()
-    except ConnectionError as e:
-        logger.error(f"FATAL: Cannot connect to database for render repos: {e}")
-        logger.error("Exiting workflow gracefully due to connection failure")
-        sys.exit(1)
+    github_api, db_pool = await init_connections_with_error_handling()
     
     try:
         # Code search for render.yaml in root directory
@@ -543,6 +539,46 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
         }
 
 
+def calculate_recency_score(created_at, now: datetime) -> float:
+    """
+    Calculate recency score based on repo age with exponential decay.
+    Heavily favors newer repos to prioritize emerging projects.
+    
+    Args:
+        created_at: Repository creation datetime (string or datetime object)
+        now: Current datetime for calculating age
+        
+    Returns:
+        Recency score between 0.01 and 1.0
+    """
+    if not created_at:
+        return 0.0
+    
+    # Ensure created_at is timezone-aware
+    if isinstance(created_at, str):
+        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    elif created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    
+    age_days = (now - created_at).days
+    
+    # Exponential decay: heavily favor very recent repos
+    if age_days <= 14:
+        return 1.0
+    elif age_days <= 30:
+        return 0.85
+    elif age_days <= 60:
+        return 0.60
+    elif age_days <= 90:
+        return 0.35
+    elif age_days <= 180:
+        return 0.15
+    elif age_days <= 365:
+        return 0.05
+    else:
+        return 0.01  # Minimal score for older repos
+
+
 async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
     """
     Simplified load: upsert dimensions and facts with recency-weighted scoring.
@@ -568,38 +604,6 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
     max_stars_render = max([r.get('stars', 1) for r in render_repos]) if render_repos else 1
     
     logger.info(f"Max stars - General: {max_stars_general}, Render: {max_stars_render}")
-    
-    def calculate_recency_score(created_at) -> float:
-        """
-        Calculate recency score based on repo age with exponential decay.
-        Heavily favors newer repos to prioritize emerging projects.
-        """
-        if not created_at:
-            return 0.0
-        
-        # Ensure created_at is timezone-aware
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        elif created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        
-        age_days = (now - created_at).days
-        
-        # Exponential decay: heavily favor very recent repos
-        if age_days <= 14:
-            return 1.0
-        elif age_days <= 30:
-            return 0.85
-        elif age_days <= 60:
-            return 0.60
-        elif age_days <= 90:
-            return 0.35
-        elif age_days <= 180:
-            return 0.15
-        elif age_days <= 365:
-            return 0.05
-        else:
-            return 0.01  # Minimal score for older repos
     
     for idx, repo in enumerate(repos, 1):
         repo_name = repo['repo_full_name']
@@ -652,7 +656,7 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
             normalized_stars = stars / max_stars if max_stars > 0 else 0.0
             
             # Calculate recency score
-            recency_score = calculate_recency_score(repo.get('created_at'))
+            recency_score = calculate_recency_score(repo.get('created_at'), now)
             
             # Final momentum score: 70% recency + 30% stars
             # This heavily favors newer repos to surface emerging projects

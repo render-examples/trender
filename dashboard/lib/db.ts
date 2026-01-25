@@ -106,31 +106,6 @@ export async function getTopRepos(
 }
 
 /**
- * Get Render showcase projects
- */
-export async function getRenderShowcase(limit: number = 50): Promise<any[]> {
-  const result = await query(
-    `SELECT * FROM analytics_render_showcase
-     WHERE repo_full_name !~ '^vercel/'
-     ORDER BY momentum_score DESC
-     LIMIT $1`,
-    [limit]
-  );
-  return result.rows;
-}
-
-/**
- * Get language statistics
- */
-export async function getLanguageStats(): Promise<any[]> {
-  const result = await query(`
-    SELECT * FROM analytics_language_trends
-    ORDER BY total_repos DESC
-  `);
-  return result.rows;
-}
-
-/**
  * Get repository details by full name
  */
 export async function getRepoDetails(fullName: string): Promise<Repository | null> {
@@ -141,95 +116,6 @@ export async function getRepoDetails(fullName: string): Promise<Repository | nul
     [fullName]
   );
   return result.rows[0] || null;
-}
-
-/**
- * Get repository snapshots (historical data)
- */
-export async function getRepoSnapshots(fullName: string, limit: number = 30): Promise<any[]> {
-  const result = await query(
-    `SELECT * FROM analytics_repo_history
-     WHERE repo_full_name = $1
-     ORDER BY snapshot_date DESC
-     LIMIT $2`,
-    [fullName, limit]
-  );
-  return result.rows;
-}
-
-/**
- * Get language-specific top repos
- */
-export async function getLanguageTopRepos(
-  language: string,
-  limit: number = 50
-): Promise<Repository[]> {
-  const result = await query<Repository>(
-    `SELECT * FROM analytics_language_rankings
-     WHERE language_name = $1
-     AND repo_full_name !~ '^vercel'
-     ORDER BY rank_in_language
-     LIMIT $2`,
-    [language, limit]
-  );
-  return result.rows;
-}
-
-/**
- * Get ecosystem statistics
- */
-export async function getEcosystemStats(): Promise<{
-  total_projects: number;
-  total_stars: number;
-  by_category: any[];
-}> {
-  const totalResult = await query(
-    `SELECT COUNT(*) as total_projects, SUM(stars) as total_stars
-     FROM analytics_render_showcase
-     WHERE repo_full_name !~ '^vercel/'`
-  );
-
-  const categoryResult = await query(
-    `SELECT render_category, COUNT(*) as count, SUM(stars) as total_stars
-     FROM analytics_render_showcase
-     WHERE repo_full_name !~ '^vercel/'
-     GROUP BY render_category
-     ORDER BY total_stars DESC`
-  );
-
-  return {
-    total_projects: parseInt(totalResult.rows[0]?.total_projects || '0'),
-    total_stars: parseInt(totalResult.rows[0]?.total_stars || '0'),
-    by_category: categoryResult.rows,
-  };
-}
-
-/**
- * Get dashboard statistics
- */
-export async function getDashboardStats(): Promise<{
-  total_repos: number;
-  render_repos: number;
-  last_updated: Date | null;
-}> {
-  const totalReposResult = await query(
-    `SELECT COUNT(*) as total_repos, MAX(last_updated) as last_updated
-     FROM analytics_trending_repos_current
-     WHERE repo_full_name !~ '^vercel/'`
-  );
-
-  const renderReposResult = await query(
-    `SELECT COUNT(*) as render_repos
-     FROM analytics_trending_repos_current
-     WHERE language = 'render'
-     AND repo_full_name !~ '^vercel'`
-  );
-
-  return {
-    total_repos: parseInt(totalReposResult.rows[0]?.total_repos || '0'),
-    render_repos: parseInt(renderReposResult.rows[0]?.render_repos || '0'),
-    last_updated: totalReposResult.rows[0]?.last_updated || null,
-  };
 }
 
 /**
