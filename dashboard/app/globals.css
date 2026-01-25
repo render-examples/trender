@@ -64,7 +64,7 @@ html {
   display: none;
 }
 
-/* Custom scrollbar for expanded cards */
+/* Custom scrollbar for expanded cards with purple accent */
 .overflow-y-auto::-webkit-scrollbar {
   width: 6px;
 }
@@ -75,15 +75,15 @@ html {
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: linear-gradient(180deg, #8b5cf6, #a78bfa);
   border-radius: 3px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: linear-gradient(180deg, #a78bfa, #c4b5fd);
 }
 
-/* Loading shimmer animation */
+/* Loading shimmer animation with purple tint */
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
@@ -95,25 +95,56 @@ html {
 
 .loading-shimmer {
   animation: shimmer 2s infinite;
+  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.2), transparent);
 }
 
-/* Prose styling for markdown in dark mode */
+/* Scanline overlay for retro tech feel */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(139, 92, 246, 0.03) 0px,
+    transparent 1px,
+    transparent 2px,
+    rgba(139, 92, 246, 0.03) 3px
+  );
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.4;
+}
+
+/* Pixel-perfect corners effect */
+@keyframes corner-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Prose styling for markdown in dark mode with purple accents */
 .prose-invert {
   --tw-prose-body: #d4d4d8;
   --tw-prose-headings: #ffffff;
   --tw-prose-lead: #a1a1aa;
-  --tw-prose-links: #60a5fa;
+  --tw-prose-links: #a78bfa;
   --tw-prose-bold: #ffffff;
   --tw-prose-counters: #a1a1aa;
-  --tw-prose-bullets: #71717a;
-  --tw-prose-hr: #3f3f46;
+  --tw-prose-bullets: #8b5cf6;
+  --tw-prose-hr: #8b5cf6;
   --tw-prose-quotes: #d4d4d8;
-  --tw-prose-quote-borders: #3f3f46;
+  --tw-prose-quote-borders: #8b5cf6;
   --tw-prose-captions: #a1a1aa;
-  --tw-prose-code: #ffffff;
+  --tw-prose-code: #c4b5fd;
   --tw-prose-pre-code: #d4d4d8;
   --tw-prose-pre-bg: #18181b;
-  --tw-prose-th-borders: #3f3f46;
+  --tw-prose-th-borders: #8b5cf6;
   --tw-prose-td-borders: #27272a;
 }
 
@@ -137,18 +168,23 @@ html {
 .prose a {
   color: var(--tw-prose-links);
   text-decoration: none;
+  transition: all 0.2s ease;
+  position: relative;
 }
 
 .prose a:hover {
   text-decoration: underline;
+  color: #c4b5fd;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
 }
 
 .prose code {
   color: var(--tw-prose-code);
-  background-color: var(--tw-prose-pre-bg);
+  background-color: rgba(139, 92, 246, 0.1);
   padding: 0.2em 0.4em;
   border-radius: 3px;
   font-size: 0.875em;
+  border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .prose pre {
@@ -187,10 +223,10 @@ html {
   scroll-snap-align: start;
 }
 
-/* Footer Styles */
+/* Footer Styles with purple accents */
 .app-footer {
   background-color: #0D0D0D;
-  border-top: 1px solid #71717a;
+  border-top: 1px solid #8b5cf6;
   padding: 2rem 2rem 2rem 4rem;
   color: #FFFFFF;
   font-size: 1.1rem;
@@ -200,6 +236,7 @@ html {
   align-items: center;
   position: relative;
   z-index: 1;
+  box-shadow: 0 -1px 20px rgba(139, 92, 246, 0.2);
 }
 
 .app-footer p {
@@ -231,11 +268,11 @@ html {
   font-weight: 400;
   line-height: 125%;
   letter-spacing: 0.16px;
-  transition: color 0.2s ease;
+  transition: color 0.3s ease;
 }
 
 .footer-link:hover {
-  color: #ffffff;
+  color: #a78bfa;
 }
 
 /* Repo Card Mobile Responsive Widths */

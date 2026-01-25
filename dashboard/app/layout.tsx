@@ -36,7 +36,7 @@ export default function RootLayout({
           {/* Icon Credits */}
           <div className="px-4 sm:px-6 md:px-8 pb-6 sm:pb-8">
             <p className="text-xs text-zinc-600">
-              Icons created by <a href="https://www.flaticon.com/authors/freepik" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Freepik</a> and <a href="https://www.flaticon.com/authors/ferdinand" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Ferdinand</a> via <a href="https://www.flaticon.com" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Flaticon</a>
+              Icons created by <a href="https://www.flaticon.com/authors/freepik" target="_blank" rel="noopener noreferrer" className="hover:text-purple-400 transition-colors">Freepik</a> and <a href="https://www.flaticon.com/authors/ferdinand" target="_blank" rel="noopener noreferrer" className="hover:text-purple-400 transition-colors">Ferdinand</a> via <a href="https://www.flaticon.com" target="_blank" rel="noopener noreferrer" className="hover:text-purple-400 transition-colors">Flaticon</a>
             </p>
           </div>
 

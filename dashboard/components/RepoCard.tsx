@@ -40,7 +40,7 @@ export default function RepoCard({ repo }: RepoCardProps) {
     >
       <motion.div
         layout
-        className={`bg-black border border-zinc-700 hover:border-white transition-colors flex flex-col relative ${
+        className={`bg-black border border-zinc-700 hover:border-purple-500 transition-all duration-300 flex flex-col relative group ${
           isExpanded ? 'repo-card-expanded' : 'repo-card-collapsed'
         }`}
         style={{ 
@@ -97,7 +97,7 @@ export default function RepoCard({ repo }: RepoCardProps) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 text-zinc-400 hover:text-white transition-colors"
+              className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 text-purple-400 hover:text-purple-300 transition-all duration-300 hover:scale-110"
             >
               <svg 
                 className="w-4 h-4 sm:w-5 sm:h-5" 

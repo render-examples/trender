@@ -118,7 +118,7 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
       {/* Left scroll arrow - hidden on touch devices */}
       <button
         onClick={() => scroll('left')}
-        className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
+        className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
         aria-label="Scroll left"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -129,7 +129,7 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
       {/* Right scroll arrow - hidden on touch devices */}
       <button
         onClick={() => scroll('right')}
-        className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
+        className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
         aria-label="Scroll right"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
