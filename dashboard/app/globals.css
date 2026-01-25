@@ -150,7 +150,6 @@ body::after {
 
 .prose {
   color: var(--tw-prose-body);
-  max-width: 65ch;
   line-height: 1.6;
 }
 
@@ -190,6 +189,7 @@ body::after {
 .prose p {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+  white-space: pre-wrap;
 }
 
 .prose a {
@@ -386,14 +386,9 @@ body::after {
   color: #a78bfa;
 }
 
-/* Repo Card Mobile Responsive Widths */
+/* Repo Card Responsive Widths */
 .repo-card-collapsed {
   width: 380px;
-}
-
-.repo-card-expanded {
-  width: 600px;
-  max-width: 90vw;
 }
 
 @media (max-width: 768px) {
@@ -401,13 +396,8 @@ body::after {
     width: 320px;
   }
 
-  .repo-card-expanded {
-    width: min(90vw, 550px);
-  }
-
   /* Thicker borders on mobile */
-  .repo-card-collapsed,
-  .repo-card-expanded {
+  .repo-card-collapsed {
     border-width: 2px !important;
   }
 }
@@ -417,13 +407,8 @@ body::after {
     width: 280px;
   }
 
-  .repo-card-expanded {
-    width: min(90vw, 500px);
-  }
-
   /* Thicker borders on mobile */
-  .repo-card-collapsed,
-  .repo-card-expanded {
+  .repo-card-collapsed {
     border-width: 2px !important;
   }
 }
@@ -464,3 +449,55 @@ body::after {
     padding-right: 0;
   }
 }
+
+/* README Panel Styles */
+.readme-panel-container {
+  background: linear-gradient(180deg, #0a0a0a 0%, #000000 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 24px rgba(139, 92, 246, 0.2);
+  position: relative;
+  z-index: 10;
+}
+
+.readme-panel-content {
+  padding: 1.5rem;
+}
+
+.readme-panel-body {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: #8b5cf6 #18181b;
+}
+
+/* Custom scrollbar for README panel */
+.readme-panel-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.readme-panel-body::-webkit-scrollbar-track {
+  background: #18181b;
+  border-radius: 4px;
+}
+
+.readme-panel-body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #a78bfa);
+  border-radius: 4px;
+}
+
+.readme-panel-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #a78bfa, #c4b5fd);
+}
+
+@media (max-width: 768px) {
+  .readme-panel-content {
+    padding: 1rem;
+  }
+  
+  .readme-panel-body {
+    max-height: 400px;
+  }
+}
+

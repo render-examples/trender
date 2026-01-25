@@ -31,6 +31,26 @@ function getDOMPurify() {
 }
 
 /**
+ * Decode HTML entities to their character equivalents
+ */
+function decodeHTMLEntities(text: string): string {
+  // Create a temporary element to decode entities
+  if (typeof window !== 'undefined') {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value;
+  }
+  // Fallback for SSR - decode common entities manually
+  return text
+    .replace(/&nbsp;?/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+/**
  * Safely render markdown to HTML using marked and DOMPurify
  * 
  * @param markdown - The markdown string to render
@@ -45,8 +65,11 @@ export function renderMarkdown(markdown: string): string {
   }
 
   try {
+    // First decode any HTML entities in the source markdown
+    const decodedMarkdown = decodeHTMLEntities(markdown);
+    
     // Parse markdown to HTML using marked
-    const rawHtml = marked.parse(markdown, { async: false }) as string;
+    const rawHtml = marked.parse(decodedMarkdown, { async: false }) as string;
     
     // Get DOMPurify instance (client-side only)
     const DOMPurify = getDOMPurify();

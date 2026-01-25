@@ -1,16 +1,20 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import Image from 'next/image'
 import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
 import RepoCard from './RepoCard'
 import LoadingSkeleton from './LoadingSkeleton'
+import ReadmePanel from './ReadmePanel'
 
 interface ScrollableRowProps {
   title: string
   repos: Repository[]
   icon?: string
+  selectedRepo: Repository | null
+  onCardClick: (repo: Repository) => void
+  onClosePanel: () => void
 }
 
 // Generate placeholder repos with lorem ipsum
@@ -51,8 +55,9 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
   }))
 }
 
-export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps) {
+export default function ScrollableRow({ title, repos, icon, selectedRepo, onCardClick, onClosePanel }: ScrollableRowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   
   // Fill with placeholders if we have fewer than 25 repos
   const displayRepos = repos.length > 0 
@@ -61,6 +66,19 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
 
   // Triple the repos for infinite scrolling
   const infiniteRepos = [...displayRepos, ...displayRepos, ...displayRepos]
+
+  // Reset selectedIndex when selectedRepo becomes null (closed from another section)
+  useEffect(() => {
+    if (!selectedRepo) {
+      setSelectedIndex(null)
+    }
+  }, [selectedRepo])
+
+  // Handle card click
+  const handleCardClick = (repo: Repository, index: number) => {
+    onCardClick(repo)
+    setSelectedIndex(index)
+  }
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -100,7 +118,7 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
   }
 
   return (
-    <div className="mb-8 sm:mb-12 relative group">
+    <div className="mb-8 sm:mb-12">
       <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6 px-4 sm:px-8">
         {icon && (
           <Image 
@@ -114,41 +132,57 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
         <h2 className="text-xl sm:text-2xl font-bold text-white">{title}</h2>
       </div>
       
-      {/* Left scroll arrow - hidden on touch devices */}
-      <button
-        onClick={() => scroll('left')}
-        className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
-        aria-label="Scroll left"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
+      {/* Cards row with arrows - positioned relative to this container only */}
+      <div className="relative group">
+        {/* Left scroll arrow - hidden on touch devices */}
+        <button
+          onClick={() => scroll('left')}
+          className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
+          aria-label="Scroll left"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
 
-      {/* Right scroll arrow - hidden on touch devices */}
-      <button
-        onClick={() => scroll('right')}
-        className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
-        aria-label="Scroll right"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
+        {/* Right scroll arrow - hidden on touch devices */}
+        <button
+          onClick={() => scroll('right')}
+          className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-purple-900/30 text-white hover:text-purple-300 p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-all border border-zinc-800 hover:border-purple-500"
+          aria-label="Scroll right"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
 
-      <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-hide">
-        <LayoutGroup>
-          <div className="flex gap-3 sm:gap-4 px-4 sm:px-8 pb-4">
-            {infiniteRepos.length === 0 ? (
-              <LoadingSkeleton count={10} />
-            ) : (
-              infiniteRepos.map((repo, index) => (
-                <RepoCard key={`${repo.repo_full_name}-${index}`} repo={repo} />
-              ))
-            )}
-          </div>
-        </LayoutGroup>
+        <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-hide">
+          <LayoutGroup>
+            <div className="flex gap-3 sm:gap-4 px-4 sm:px-8 pb-4">
+              {infiniteRepos.length === 0 ? (
+                <LoadingSkeleton count={10} />
+              ) : (
+                infiniteRepos.map((repo, index) => (
+                  <RepoCard 
+                    key={`${repo.repo_full_name}-${index}`} 
+                    repo={repo}
+                    isSelected={selectedRepo?.repo_full_name === repo.repo_full_name}
+                    onCardClick={() => handleCardClick(repo, index)}
+                  />
+                ))
+              )}
+            </div>
+          </LayoutGroup>
+        </div>
       </div>
+
+      {/* README Panel - outside the cards row container */}
+      {selectedRepo && (
+        <ReadmePanel 
+          repo={selectedRepo}
+          onClose={onClosePanel}
+        />
+      )}
     </div>
   )
 }
