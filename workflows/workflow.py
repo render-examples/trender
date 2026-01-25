@@ -400,11 +400,25 @@ async def fetch_render_repos() -> List[Dict]:
         repos_to_process = repos[:target_count]
         logger.info(f"Processing {len(repos_to_process)} render projects (target={target_count})")
         
-        # Store in raw layer
-        await store_raw_repos(repos_to_process, db_pool, source_language='render')
+        # Fetch READMEs in parallel (same as language repos)
+        readme_contents = {}
+        readme_tasks = []
+        for repo in repos_to_process:
+            owner, name = repo.get('full_name', '/').split('/')
+            readme_tasks.append(github_api.fetch_readme(owner, name))
         
-        # Analyze batch (stores in staging)
-        analyzed = await analyze_repo_batch(repos_to_process)
+        readme_results = await asyncio.gather(*readme_tasks, return_exceptions=True)
+        for i, repo in enumerate(repos_to_process):
+            if not isinstance(readme_results[i], Exception) and readme_results[i]:
+                readme_contents[repo.get('full_name')] = readme_results[i]
+        
+        logger.info(f"Fetched {len(readme_contents)} READMEs for render repos")
+        
+        # Store in raw layer with READMEs
+        await store_raw_repos(repos_to_process, db_pool, source_language='render', readme_contents=readme_contents)
+        
+        # Analyze batch (stores in staging) with README contents
+        analyzed = await analyze_repo_batch(repos_to_process, readme_contents)
         
         logger.info(f"fetch_render_repos END: {len(analyzed)} analyzed")
         return analyzed
