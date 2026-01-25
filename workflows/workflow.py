@@ -14,7 +14,7 @@ from typing import Dict, List
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from render_detection import detect_render_usage, store_render_enrichment
+from render_detection import store_render_enrichment
 from etl.extract import store_raw_repos, store_raw_metrics
 from etl.data_quality import calculate_data_quality_score
 
@@ -157,9 +157,10 @@ async def fetch_language_repos(language: str) -> List[Dict]:
             repos = await github_api.search_repositories(
                 language=language,
                 sort='stars',
-                updated_since=datetime.now(timezone.utc) - timedelta(days=30)
+                updated_since=datetime.now(timezone.utc) - timedelta(days=30),
+                created_since=datetime.now(timezone.utc) - timedelta(days=180)
             )
-            logger.info(f"GitHub API returned {len(repos)} repos for {language}")
+            logger.info(f"GitHub API returned {len(repos)} repos for {language} (updated in last 30d, created in last 180d)")
         except Exception as e:
             logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
             raise
@@ -278,26 +279,18 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     
     owner, name = repo_full_name.split('/', 1)
 
-    # Fetch Render usage detection (no need for commits/issues/contributors)
-    if readme_content is not None:
-        # README already fetched, don't call API again
+    # Check if repo was already marked as using Render (from code search)
+    uses_render = repo.get('uses_render', False)
+    
+    # Fetch README if not provided
+    if readme_content is None:
         try:
-            render_data = await detect_render_usage(repo, github_api, db_pool)
+            readme = await github_api.fetch_readme(owner, name)
         except Exception as e:
-            render_data = {}
-        
-        readme = readme_content
+            logger.debug(f"Failed to fetch README for {repo_full_name}: {e}")
+            readme = None
     else:
-        # Fetch README along with Render detection
-        render_data, readme = await asyncio.gather(
-            detect_render_usage(repo, github_api, db_pool),
-            github_api.fetch_readme(owner, name),
-            return_exceptions=True
-        )
-        
-        # Handle exceptions
-        render_data = render_data if not isinstance(render_data, Exception) else {}
-        readme = readme if not isinstance(readme, Exception) else None
+        readme = readme_content
 
     # Build enriched repo data
     enriched = {
@@ -309,8 +302,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'stars': repo.get('stargazers_count', 0),
         'created_at': repo.get('created_at'),
         'updated_at': repo.get('updated_at'),
-        'uses_render': render_data.get('uses_render', False),
-        **render_data
+        'uses_render': uses_render,
     }
     
     # Parse ISO datetime strings to timezone-aware datetime objects for PostgreSQL
@@ -325,21 +317,8 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     enriched['data_quality_score'] = calculate_data_quality_score(enriched)
 
     # Store in staging layer
-    logger.info(f"Storing {enriched['repo_full_name']} to staging (quality: {enriched['data_quality_score']})")
+    logger.info(f"Storing {enriched['repo_full_name']} to staging (uses_render={uses_render}, quality={enriched['data_quality_score']})")
     await store_in_staging(enriched, db_pool)
-    
-    # If Render repo, store enrichment data
-    if enriched.get('uses_render') and render_data.get('uses_render'):
-        enriched_project = {
-            'repo_full_name': enriched['repo_full_name'],
-            'render_category': render_data.get('render_category', 'community'),
-            'render_services': render_data.get('services', []),
-            'has_blueprint_button': render_data.get('has_blueprint_button', False),
-            'render_complexity_score': render_data.get('complexity_score', 0),
-            'service_count': render_data.get('service_count', 0)
-        }
-        logger.info(f"Storing Render enrichment for {enriched['repo_full_name']}")
-        await store_render_enrichment([enriched_project], db_pool)
     
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
 
@@ -377,13 +356,14 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
 @task
 async def fetch_render_repos() -> List[Dict]:
     """
-    Fetch Render ecosystem repos using multi-strategy search.
-    Combines path search, render-examples org, and topic search.
+    Fetch Render ecosystem repos using code search.
+    Searches for repositories with render.yaml in root directory.
+    Filters for repos created in the last 6 months to focus on newer projects.
     
     Returns:
         List of repository dictionaries
     """
-    logger.info("fetch_render_repos START - multi-strategy search")
+    logger.info("fetch_render_repos START - code search")
     
     # Initialize connections
     try:
@@ -394,10 +374,13 @@ async def fetch_render_repos() -> List[Dict]:
         sys.exit(1)
     
     try:
-        # Multi-strategy search: path + org + topic
+        # Code search for render.yaml in root directory
+        # Filter for repos created in last 6 months to prioritize newer projects
+        created_since = datetime.now(timezone.utc) - timedelta(days=180)
+        
         # Fetch more than needed (50) to account for quality filtering
-        repos = await github_api.search_render_ecosystem(limit=50)
-        logger.info(f"Found {len(repos)} total Render ecosystem repos")
+        repos = await github_api.search_render_ecosystem(limit=50, created_since=created_since)
+        logger.info(f"Found {len(repos)} Render ecosystem repos created since {created_since.strftime('%Y-%m-%d')}")
         
         if not repos:
             return []
@@ -525,11 +508,13 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
 
 async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
     """
-    Simplified load: upsert dimensions and facts with star-recency scoring.
+    Simplified load: upsert dimensions and facts with recency-weighted scoring.
     
-    Scoring formula:
-    - 50% normalized star count
-    - 50% recency score (based on repo creation date within last 3 months)
+    Scoring formula (heavily favors recent repos):
+    - 70% recency score (exponential decay based on repo creation date)
+    - 30% normalized star count
+    
+    This prioritizes emerging/trending projects over established popular repos.
     
     Args:
         repos: List of repository records from staging
@@ -560,7 +545,10 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
     logger.info(f"Max stars - General: {max_stars_general}, Render: {max_stars_render}")
     
     def calculate_recency_score(created_at) -> float:
-        """Calculate recency score based on repo age."""
+        """
+        Calculate recency score based on repo age with exponential decay.
+        Heavily favors newer repos to prioritize emerging projects.
+        """
         if not created_at:
             return 0.0
         
@@ -572,14 +560,21 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
         
         age_days = (now - created_at).days
         
-        if age_days <= 30:
+        # Exponential decay: heavily favor very recent repos
+        if age_days <= 14:
             return 1.0
+        elif age_days <= 30:
+            return 0.85
         elif age_days <= 60:
-            return 0.75
+            return 0.60
         elif age_days <= 90:
-            return 0.5
+            return 0.35
+        elif age_days <= 180:
+            return 0.15
+        elif age_days <= 365:
+            return 0.05
         else:
-            return 0.0
+            return 0.01  # Minimal score for older repos
     
     for idx, repo in enumerate(repos, 1):
         repo_name = repo['repo_full_name']
@@ -653,10 +648,11 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
             # Calculate recency score
             recency_score = calculate_recency_score(repo.get('created_at'))
             
-            # Final momentum score: 50% stars + 50% recency
-            momentum_score = (normalized_stars * 0.5) + (recency_score * 0.5)
+            # Final momentum score: 70% recency + 30% stars
+            # This heavily favors newer repos to surface emerging projects
+            momentum_score = (recency_score * 0.7) + (normalized_stars * 0.3)
             
-            logger.info(f"Score for {repo_name}: stars={stars}, norm_stars={normalized_stars:.3f}, recency={recency_score}, momentum={momentum_score:.3f}")
+            logger.info(f"Score for {repo_name}: stars={stars}, norm_stars={normalized_stars:.3f}, recency={recency_score:.2f}, momentum={momentum_score:.3f}")
             
             # Insert fact snapshot with calculated momentum score
             await conn.execute("""

@@ -33,7 +33,6 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
   const fixedDate = new Date('2024-01-01T00:00:00Z')
   
   return Array.from({ length: count }).map((_, i) => ({
-    id: -i - 1,
     repo_full_name: `placeholder/project-${i + 1}`,
     repo_url: '#',
     language,
@@ -42,17 +41,13 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
     star_velocity: 0,
     activity_score: 0,
     momentum_score: 0,
-    commits_last_7_days: 0,
-    issues_closed_last_7_days: 0,
-    active_contributors: 0,
     description: loremTexts[i % loremTexts.length],
     readme_content: null,
     uses_render: false,
     render_category: null,
-    render_services: [],
-    has_blueprint_button: false,
-    render_complexity_score: 0,
-    created_at: fixedDate,
+    rank_overall: 0,
+    rank_in_language: 0,
+    snapshot_date: fixedDate,
     last_updated: fixedDate,
   }))
 }

@@ -49,9 +49,9 @@ export async function query<T extends QueryResultRow = any>(
 
 /**
  * Repository type definition
+ * Matches the analytics_trending_repos_current view
  */
 export interface Repository {
-  id: number;
   repo_full_name: string;
   repo_url: string;
   language: string;
@@ -59,17 +59,13 @@ export interface Repository {
   star_velocity: number;
   activity_score: number;
   momentum_score: number;
-  commits_last_7_days: number;
-  issues_closed_last_7_days: number;
-  active_contributors: number;
   description: string;
   readme_content: string | null;
   uses_render: boolean;
   render_category: string | null;
-  render_services: string[];
-  has_blueprint_button: boolean;
-  render_complexity_score: number;
-  created_at: Date;
+  rank_overall: number;
+  rank_in_language: number;
+  snapshot_date: Date;
   last_updated: Date;
 }
 

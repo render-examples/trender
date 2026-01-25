@@ -119,7 +119,8 @@ class GitHubAPIClient:
         return None
 
     async def search_repositories(self, language: str, sort: str = 'stars',
-                                 updated_since: datetime = None) -> List[Dict]:
+                                 updated_since: datetime = None,
+                                 created_since: datetime = None) -> List[Dict]:
         """
         Search repositories by language.
 
@@ -127,6 +128,7 @@ class GitHubAPIClient:
             language: Programming language to filter by
             sort: Sort method (stars, forks, updated)
             updated_since: Only return repos updated since this date
+            created_since: Only return repos created since this date
 
         Returns:
             List of repository data dictionaries
@@ -134,6 +136,8 @@ class GitHubAPIClient:
         query = f"language:{language}"
         if updated_since:
             query += f" pushed:>={updated_since.strftime('%Y-%m-%d')}"
+        if created_since:
+            query += f" created:>={created_since.strftime('%Y-%m-%d')}"
 
         url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page=50"
         result = await self._api_call(url)
@@ -298,7 +302,7 @@ class GitHubAPIClient:
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
-    async def search_repos_by_path(self, filename: str, limit: int = 50) -> List[Dict]:
+    async def search_repos_by_path(self, filename: str, limit: int = 50, created_since: datetime = None) -> List[Dict]:
         """
         Search for repositories containing a file in the root directory using code search.
         Uses GitHub's code search API which properly supports filename matching.
@@ -306,12 +310,18 @@ class GitHubAPIClient:
         Args:
             filename: Filename to search for (e.g., 'render.yaml')
             limit: Maximum number of results
+            created_since: Only return repos created since this date (optional)
         
         Returns:
             List of repository data dictionaries ordered by stars descending
         """
         # Use code search API which properly supports path/filename matching
         query = f"filename:{filename}"
+        
+        # Add date filter if provided
+        if created_since:
+            query += f" created:>={created_since.strftime('%Y-%m-%d')}"
+        
         url = f"{self.base_url}/search/code?q={query}&per_page=100"
         
         logger.info(f"Searching for {filename} using code search API")
@@ -348,57 +358,30 @@ class GitHubAPIClient:
         
         return repos[:limit]
     
-    async def search_render_ecosystem(self, limit: int = 50) -> List[Dict]:
+    async def search_render_ecosystem(self, limit: int = 50, created_since: datetime = None) -> List[Dict]:
         """
-        Multi-strategy search for Render ecosystem repositories.
-        Combines multiple search strategies to maximize coverage.
-        
-        Strategies:
-        1. Code search for render.yaml in root directory (sorted by stars)
-        2. Topic search (community repos tagged with render)
+        Search for Render ecosystem repositories using code search.
+        Finds repositories with render.yaml in root directory, sorted by stars.
         
         Args:
             limit: Maximum number of results to return
+            created_since: Only return repos created since this date (optional)
         
         Returns:
-            Deduplicated list of repository data dictionaries
+            List of repository data dictionaries sorted by stars
         """
-        all_repos = []
-        seen_repos = set()
+        logger.info("=== Code search for render.yaml in root ===")
+        if created_since:
+            logger.info(f"Filtering for repos created since {created_since.strftime('%Y-%m-%d')}")
         
-        logger.info("=== STRATEGY 1: Code search for render.yaml in root ===")
         try:
-            # Strategy 1: Code search for render.yaml in root (sorted by stars)
-            repos_by_code = await self.search_repos_by_path('render.yaml', limit=limit)
-            for repo in repos_by_code:
-                full_name = repo.get('full_name')
-                if full_name and full_name not in seen_repos:
-                    seen_repos.add(full_name)
-                    all_repos.append(repo)
-            logger.info(f"Strategy 1: Found {len(repos_by_code)} repos via code search")
+            # Code search for render.yaml in root (sorted by stars)
+            repos = await self.search_repos_by_path('render.yaml', limit=limit, created_since=created_since)
+            logger.info(f"Found {len(repos)} repos via code search")
+            return repos
         except Exception as e:
-            logger.warning(f"Strategy 1 failed: {e}")
-        
-        logger.info("=== STRATEGY 2: Topic-based search ===")
-        try:
-            # Strategy 2: Topic search (community projects)
-            repos_by_topic = await self.search_by_topic('render-blueprints')
-            for repo in repos_by_topic:
-                full_name = repo.get('full_name')
-                if full_name and full_name not in seen_repos:
-                    seen_repos.add(full_name)
-                    all_repos.append(repo)
-            logger.info(f"Strategy 2: Found {len(repos_by_topic)} repos via topic search")
-        except Exception as e:
-            logger.warning(f"Strategy 2 failed: {e}")
-        
-        # Sort by stars descending to prioritize quality
-        all_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
-        
-        result = all_repos[:limit]
-        logger.info(f"=== TOTAL: Returning {len(result)} unique Render repos (from {len(all_repos)} total) ===")
-        
-        return result
+            logger.warning(f"Code search failed: {e}")
+            return []
 
     async def get_org_repos(self, org: str) -> List[Dict]:
         """

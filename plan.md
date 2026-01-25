@@ -3,6 +3,7 @@ TODO:
     - Currently only picking up repos from internal Render orgs. Change this by eliminating Render topics filtering
 - Decide whether to render READMEs better (without images/tags) or remove entirely
 - Set up CRON job to run once a day
+    - Decide how to best include new data in database. Should we rewrite on every run?
 - General code cleanup
 - Switch from PAT to new GitHub App and get back to Trey on specifics
 - Smooth out UI design
