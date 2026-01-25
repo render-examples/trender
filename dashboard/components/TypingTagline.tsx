@@ -12,7 +12,7 @@ export default function TypingTagline() {
             href="https://render.com/docs/workflows" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-white hover:text-zinc-300 underline"
+            className="text-zinc-400 hover:text-white underline transition-colors"
           >
             Render Workflows
           </a>

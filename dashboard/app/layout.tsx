@@ -26,6 +26,13 @@ export default function RootLayout({
             {children}
           </main>
 
+          {/* Icon Credits */}
+          <div className="px-8 pb-8">
+            <p className="text-xs text-zinc-600">
+              Icons created by <a href="https://www.flaticon.com/authors/freepik" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Freepik</a> and <a href="https://www.flaticon.com/authors/ferdinand" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Ferdinand</a> via <a href="https://www.flaticon.com" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Flaticon</a>
+            </p>
+          </div>
+
           {/* Footer */}
           <footer className="app-footer">
             <p className="footer-links">
@@ -54,37 +61,6 @@ export default function RootLayout({
                 className="footer-link"
               >
                 GitHub
-              </a>
-            </p>
-            <p className="text-xs text-zinc-500 mt-2">
-              <a 
-                href="https://www.flaticon.com/free-icons/python" 
-                title="python icons"
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="hover:text-zinc-400 transition-colors"
-              >
-                Python icons created by Freepik - Flaticon
-              </a>
-              {' • '}
-              <a 
-                href="https://www.flaticon.com/free-icons/typescript" 
-                title="typescript icons"
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="hover:text-zinc-400 transition-colors"
-              >
-                Typescript icons created by Freepik - Flaticon
-              </a>
-              {' • '}
-              <a 
-                href="https://www.flaticon.com/free-icons/trend" 
-                title="trend icons"
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="hover:text-zinc-400 transition-colors"
-              >
-                Trend icons created by Ferdinand - Flaticon
               </a>
             </p>
             <p className="footer-copyright">
