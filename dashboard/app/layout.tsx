@@ -8,6 +8,12 @@ export const metadata: Metadata = {
   icons: {
     icon: '/images/trend.png',
   },
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
 }
 
 export default function RootLayout({
@@ -22,12 +28,12 @@ export default function RootLayout({
           <Header />
 
           {/* Main Content */}
-          <main className="pt-28 pb-12 relative z-10">
+          <main className="pt-20 sm:pt-24 md:pt-28 pb-8 sm:pb-10 md:pb-12 relative z-10">
             {children}
           </main>
 
           {/* Icon Credits */}
-          <div className="px-8 pb-8">
+          <div className="px-4 sm:px-6 md:px-8 pb-6 sm:pb-8">
             <p className="text-xs text-zinc-600">
               Icons created by <a href="https://www.flaticon.com/authors/freepik" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Freepik</a> and <a href="https://www.flaticon.com/authors/ferdinand" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Ferdinand</a> via <a href="https://www.flaticon.com" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-400 transition-colors">Flaticon</a>
             </p>

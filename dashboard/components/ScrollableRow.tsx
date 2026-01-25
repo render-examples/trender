@@ -101,24 +101,24 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
   }
 
   return (
-    <div className="mb-12 relative group">
-      <div className="flex items-center gap-4 mb-6 px-8">
+    <div className="mb-8 sm:mb-12 relative group">
+      <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6 px-4 sm:px-8">
         {icon && (
           <Image 
             src={icon} 
             alt={`${title} icon`} 
-            width={32} 
-            height={32} 
-            className="flex-shrink-0"
+            width={24} 
+            height={24} 
+            className="flex-shrink-0 sm:w-8 sm:h-8"
           />
         )}
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-white">{title}</h2>
       </div>
       
-      {/* Left scroll arrow */}
+      {/* Left scroll arrow - hidden on touch devices */}
       <button
         onClick={() => scroll('left')}
-        className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
+        className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-r-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
         aria-label="Scroll left"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,10 +126,10 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
         </svg>
       </button>
 
-      {/* Right scroll arrow */}
+      {/* Right scroll arrow - hidden on touch devices */}
       <button
         onClick={() => scroll('right')}
-        className="absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
+        className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-black/80 hover:bg-black/95 text-white p-3 rounded-l-lg opacity-0 group-hover:opacity-100 transition-opacity border border-zinc-800"
         aria-label="Scroll right"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,7 +139,7 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
 
       <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-hide">
         <LayoutGroup>
-          <div className="flex gap-4 px-8 pb-4">
+          <div className="flex gap-3 sm:gap-4 px-4 sm:px-8 pb-4">
             {infiniteRepos.length === 0 ? (
               <LoadingSkeleton count={10} />
             ) : (

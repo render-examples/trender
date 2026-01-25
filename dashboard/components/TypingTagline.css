@@ -67,10 +67,10 @@
   }
 
   .typing-text {
-    animation: 
-      typing 3s steps(75, end) forwards,
-      blink-caret 0.75s step-end 4,
-      remove-caret 0s 3s forwards;
+    white-space: normal;
+    border-right: none;
+    animation: none;
+    max-width: 100%;
   }
 }
 
@@ -84,11 +84,10 @@
   }
 
   .typing-text {
-    border-right-width: 2px;
-    animation: 
-      typing 2.5s steps(75, end) forwards,
-      blink-caret 0.75s step-end 4,
-      remove-caret 0s 2.5s forwards;
+    white-space: normal;
+    border-right: none;
+    animation: none;
+    max-width: 100%;
   }
 }
 

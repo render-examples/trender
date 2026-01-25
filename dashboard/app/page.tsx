@@ -28,8 +28,8 @@ async function GoRow() {
 
 function RowSkeleton({ title }: { title: string }) {
   return (
-    <div className="mb-12">
-      <h2 className="text-2xl font-bold text-white mb-6 px-8">{title}</h2>
+    <div className="mb-8 sm:mb-12">
+      <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 px-4 sm:px-8">{title}</h2>
       <LoadingSkeleton count={10} />
     </div>
   )

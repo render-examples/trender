@@ -21,6 +21,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  /* Improve text rendering on mobile */
+  text-rendering: optimizeLegibility;
 }
 
 /* Futuristic grid background */
@@ -37,6 +39,14 @@ body::before {
   background-size: 50px 50px;
   pointer-events: none;
   z-index: 0;
+}
+
+/* Smaller grid on mobile for better performance and appearance */
+@media (max-width: 768px) {
+  body::before {
+    background-size: 30px 30px;
+    opacity: 0.7;
+  }
 }
 
 /* Smooth scrolling */
@@ -165,6 +175,14 @@ html {
   scroll-padding-left: 2rem;
 }
 
+/* Mobile snap scrolling - more aggressive */
+@media (max-width: 768px) {
+  .overflow-x-auto {
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 1rem;
+  }
+}
+
 .overflow-x-auto > div > * {
   scroll-snap-align: start;
 }
@@ -218,6 +236,55 @@ html {
 
 .footer-link:hover {
   color: #ffffff;
+}
+
+/* Repo Card Mobile Responsive Widths */
+.repo-card-collapsed {
+  width: 380px;
+}
+
+.repo-card-expanded {
+  width: 600px;
+  max-width: 90vw;
+}
+
+@media (max-width: 768px) {
+  .repo-card-collapsed {
+    width: 320px;
+  }
+
+  .repo-card-expanded {
+    width: min(90vw, 550px);
+  }
+}
+
+@media (max-width: 640px) {
+  .repo-card-collapsed {
+    width: 280px;
+  }
+
+  .repo-card-expanded {
+    width: min(90vw, 500px);
+  }
+}
+
+/* Touch scroll optimization */
+@media (hover: none) and (pointer: coarse) {
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  
+  /* Better tap target sizes on mobile */
+  button, a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent double-tap zoom on buttons and links */
+  button, a {
+    touch-action: manipulation;
+  }
 }
 
 @media (max-width: 768px) {
