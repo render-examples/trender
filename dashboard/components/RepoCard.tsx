@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import ReactMarkdown from 'react-markdown'
 import { Repository } from '@/lib/db'
 import { formatStarCount } from '@/lib/formatters'
+import { renderMarkdown, truncateMarkdown } from '@/lib/markdown'
 
 interface RepoCardProps {
   repo: Repository
@@ -23,8 +23,13 @@ export default function RepoCard({ repo }: RepoCardProps) {
     }
   }
 
-  // Show more content when expanded for better scrolling
-  const readmeContent = repo.readme_content || 'Not available'
+  // Render markdown once using marked - much faster than react-markdown
+  // Truncate for better performance and UX in the card view
+  const renderedReadme = useMemo(() => {
+    const content = repo.readme_content || ''
+    const truncated = truncateMarkdown(content, 800)
+    return renderMarkdown(truncated)
+  }, [repo.readme_content])
 
   return (
     <motion.div
@@ -80,41 +85,14 @@ export default function RepoCard({ repo }: RepoCardProps) {
                 className="mt-4 flex-1 flex flex-col"
               >
                 <h4 className="text-sm font-semibold text-white mb-2 flex-shrink-0">README</h4>
-                <div className="text-xs text-zinc-400 prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown>{readmeContent}</ReactMarkdown>
-                  <span className="text-zinc-500">...</span>
-                </div>
+                <div 
+                  className="text-xs text-zinc-400 prose prose-invert prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderedReadme }}
+                />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-
-        {/* Arrow icon in bottom right when expanded */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.2 }}
-              className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 text-purple-400 hover:text-purple-300 transition-all duration-300 hover:scale-110"
-            >
-              <svg 
-                className="w-4 h-4 sm:w-5 sm:h-5" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
-                />
-              </svg>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
     </motion.div>
   )

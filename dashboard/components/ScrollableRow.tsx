@@ -43,7 +43,6 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
     momentum_score: 0,
     description: loremTexts[i % loremTexts.length],
     readme_content: null,
-    uses_render: false,
     render_category: null,
     rank_overall: 0,
     rank_in_language: 0,
