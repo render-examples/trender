@@ -9,9 +9,7 @@ CREATE TABLE IF NOT EXISTS raw_github_repos (
   api_response JSONB NOT NULL,
   readme_content TEXT,
   fetch_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  source_language VARCHAR(50),
-  source_type VARCHAR(20), -- 'trending', 'render_ecosystem'
-  CONSTRAINT valid_source_type CHECK (source_type IN ('trending', 'render_ecosystem'))
+  source_language VARCHAR(50)
 );
 
 -- Unique constraint to prevent duplicates - one row per repo (latest data)
@@ -26,7 +24,7 @@ END $$;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_raw_repos_fetch ON raw_github_repos(fetch_timestamp);
-CREATE INDEX IF NOT EXISTS idx_raw_repos_source ON raw_github_repos(source_type, source_language);
+CREATE INDEX IF NOT EXISTS idx_raw_repos_language ON raw_github_repos(source_language);
 
 -- Table: raw_repo_metrics
 -- Purpose: Store detailed GitHub metrics (commits, issues, contributors)

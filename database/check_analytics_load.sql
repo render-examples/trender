@@ -3,8 +3,7 @@
 \echo '=== STAGING DATA READY TO LOAD ==='
 SELECT 
     language,
-    COUNT(*) as repos_in_staging,
-    COUNT(CASE WHEN data_quality_score >= 0.70 THEN 1 END) as high_quality_repos
+    COUNT(*) as repos_in_staging
 FROM stg_repos_validated
 GROUP BY language
 ORDER BY language;

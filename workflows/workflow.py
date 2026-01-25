@@ -16,7 +16,6 @@ from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
 from render_detection import store_render_enrichment
 from etl.extract import store_raw_repos, store_raw_metrics
-from etl.data_quality import calculate_data_quality_score
 
 
 # Helper functions
@@ -104,11 +103,11 @@ async def main_analysis_task() -> Dict:
             logger.info(f"Parallel tasks completed. Total results: {len(results)}")
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) FAILED: {type(result).__name__}: {str(result)}")
+                    logger.error(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_yaml_search'}) FAILED: {type(result).__name__}: {str(result)}")
                     logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
                 else:
                     result_len = len(result) if isinstance(result, (list, dict)) else 'N/A'
-                    logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_ecosystem'}) SUCCESS: {type(result).__name__}, items={result_len}")
+                    logger.info(f"Task {i} ({TARGET_LANGUAGES[i] if i < len(TARGET_LANGUAGES) else 'render_yaml_search'}) SUCCESS: {type(result).__name__}, items={result_len}")
 
             # Aggregate and store final results
             try:
@@ -313,11 +312,8 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     if isinstance(enriched['updated_at'], str):
         enriched['updated_at'] = datetime.fromisoformat(enriched['updated_at'].replace('Z', '+00:00'))
 
-    # Calculate data quality score
-    enriched['data_quality_score'] = calculate_data_quality_score(enriched)
-
     # Store in staging layer
-    logger.info(f"Storing {enriched['repo_full_name']} to staging (uses_render={uses_render}, quality={enriched['data_quality_score']})")
+    logger.info(f"Storing {enriched['repo_full_name']} to staging (uses_render={uses_render})")
     await store_in_staging(enriched, db_pool)
     
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
@@ -336,21 +332,19 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
         await conn.execute("""
             INSERT INTO stg_repos_validated
                 (repo_full_name, repo_url, language, description, stars,
-                 created_at, updated_at, uses_render,
-                 readme_content, data_quality_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 created_at, updated_at, uses_render, readme_content)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (repo_full_name) DO UPDATE SET
                 stars = EXCLUDED.stars,
                 updated_at = EXCLUDED.updated_at,
                 uses_render = EXCLUDED.uses_render,
                 readme_content = EXCLUDED.readme_content,
-                data_quality_score = EXCLUDED.data_quality_score,
                 loaded_at = NOW()
         """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
             repo.get('description'), repo.get('stars', 0),
             repo.get('created_at'), repo.get('updated_at'),
             repo.get('uses_render', False),
-            repo.get('readme_content'), repo.get('data_quality_score', 0.0))
+            repo.get('readme_content'))
 
 
 @task
@@ -358,12 +352,11 @@ async def fetch_render_repos() -> List[Dict]:
     """
     Fetch Render ecosystem repos using code search.
     Searches for repositories with render.yaml in root directory.
-    Filters for repos created in the last 6 months to focus on newer projects.
     
     Returns:
         List of repository dictionaries
     """
-    logger.info("fetch_render_repos START - code search")
+    logger.info("fetch_render_repos START - code search for render.yaml")
     
     # Initialize connections
     try:
@@ -375,14 +368,12 @@ async def fetch_render_repos() -> List[Dict]:
     
     try:
         # Code search for render.yaml in root directory
-        # Filter for repos created in last 6 months to prioritize newer projects
-        created_since = datetime.now(timezone.utc) - timedelta(days=180)
-        
-        # Fetch more than needed (50) to account for quality filtering
-        repos = await github_api.search_render_ecosystem(limit=50, created_since=created_since)
-        logger.info(f"Found {len(repos)} Render ecosystem repos created since {created_since.strftime('%Y-%m-%d')}")
+        # No date filter - get all repos with render.yaml sorted by stars
+        repos = await github_api.search_render_ecosystem(limit=50, created_since=None)
+        logger.info(f"Found {len(repos)} repos with render.yaml in root")
         
         if not repos:
+            logger.warning("No Render repos found via code search")
             return []
         
         # Mark all as Render projects
@@ -390,7 +381,7 @@ async def fetch_render_repos() -> List[Dict]:
             repo['uses_render'] = True
         
         # Store in raw layer
-        await store_raw_repos(repos, db_pool, source_type='render_ecosystem')
+        await store_raw_repos(repos, db_pool, source_language='render')
         
         # Analyze batch (stores in staging)
         analyzed = await analyze_repo_batch(repos)
@@ -438,7 +429,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.updated_at,
                 srv.uses_render,
                 srv.readme_content,
-                srv.data_quality_score,
                 sre.render_category,
                 sre.render_services,
                 sre.render_complexity_score,
@@ -446,12 +436,11 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 sre.service_count
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
-            WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
             LIMIT 100
         """)
         
-        # Part 2: ALL Render repos with quality >= 0.60 (lower threshold for Render)
+        # Part 2: ALL Render repos
         render_repos = await conn.fetch("""
             SELECT
                 srv.repo_full_name,
@@ -463,7 +452,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.updated_at,
                 srv.uses_render,
                 srv.readme_content,
-                srv.data_quality_score,
                 sre.render_category,
                 sre.render_services,
                 sre.render_complexity_score,
@@ -472,7 +460,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
             WHERE srv.uses_render = TRUE
-              AND srv.data_quality_score >= 0.60
             ORDER BY srv.stars DESC
         """)
         

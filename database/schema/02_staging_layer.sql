@@ -14,10 +14,8 @@ CREATE TABLE IF NOT EXISTS stg_repos_validated (
   updated_at TIMESTAMPTZ NOT NULL,
   uses_render BOOLEAN DEFAULT FALSE,
   readme_content TEXT,
-  data_quality_score DECIMAL(3,2), -- 0.00 to 1.00
   loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT valid_stars CHECK (stars >= 0),
-  CONSTRAINT valid_quality CHECK (data_quality_score BETWEEN 0 AND 1)
+  CONSTRAINT valid_stars CHECK (stars >= 0)
 );
 
 -- Indexes for performance

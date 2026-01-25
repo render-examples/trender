@@ -61,8 +61,7 @@ trender/
 │   ├── connections.py        # Shared resource management
 │   ├── render_detection.py  # Render usage detection
 │   ├── etl/
-│   │   ├── extract.py        # Raw layer extraction
-│   │   └── data_quality.py   # Quality scoring
+│   │   └── extract.py        # Raw layer extraction
 │   └── requirements.txt
 ├── trigger/
 │   ├── trigger.py            # Cron trigger script
@@ -357,7 +356,7 @@ psql $DATABASE_URL -f schema/04_views.sql
 - `raw_repo_metrics`: Stores repository metrics (commits, issues, contributors)
 
 **Staging Layer:**
-- `stg_repos_validated`: Cleaned and validated repository data with quality scores
+- `stg_repos_validated`: Cleaned and validated repository data
 - `stg_render_enrichment`: Render-specific metadata (service types, complexity, categories)
 
 **Analytics Layer:**
@@ -541,7 +540,6 @@ You should see:
 ### Layer 2: Staging (Validation)
 - Cleaned and validated data
 - Tables: `stg_repos_validated`, `stg_render_enrichment`
-- Data quality scoring (0.0 - 1.0)
 - Business rules applied
 - **Render enrichment data**: service types, complexity scores, categories, blueprint indicators
 
@@ -643,7 +641,6 @@ psql $DATABASE_URL -f database/cleanup_workflow_tracking.sql
 - Process 150 repos across 3 languages + Render ecosystem in 10-20 seconds
 - 4x parallel task execution (Python, TypeScript, Go, Render)
 - 3-layer data pipeline with dimensional modeling (9 tables + 6 views)
-- Data quality score >= 0.70 for all loaded repositories
 - Accurate Render discovery using code search (only root-level render.yaml files)
 
 **Marketing:**

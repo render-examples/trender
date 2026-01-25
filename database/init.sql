@@ -36,7 +36,7 @@
 \echo '  - raw_repo_metrics: Detailed metrics counts (commits, issues, contributors)'
 \echo ''
 \echo 'STAGING LAYER (2 tables):'
-\echo '  - stg_repos_validated: Cleaned repos with quality scores'
+\echo '  - stg_repos_validated: Cleaned and validated repositories'
 \echo '  - stg_render_enrichment: Render service configs and complexity'
 \echo ''
 \echo 'ANALYTICS LAYER - DIMENSIONS (3 tables):'

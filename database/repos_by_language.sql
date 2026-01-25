@@ -6,8 +6,7 @@ SELECT
     language,
     COUNT(*) as total_repos,
     COUNT(CASE WHEN uses_render THEN 1 END) as render_repos,
-    AVG(stars) as avg_stars,
-    AVG(data_quality_score) as avg_quality_score
+    AVG(stars) as avg_stars
 FROM stg_repos_validated
 GROUP BY language
 ORDER BY total_repos DESC;
@@ -33,7 +32,6 @@ SELECT
     issues_closed_last_7_days,
     active_contributors,
     uses_render,
-    data_quality_score,
     created_at,
     loaded_at,
     CASE 
@@ -61,7 +59,6 @@ SELECT
     issues_closed_last_7_days,
     active_contributors,
     uses_render,
-    data_quality_score,
     created_at,
     loaded_at,
     CASE 
@@ -89,7 +86,6 @@ SELECT
     issues_closed_last_7_days,
     active_contributors,
     uses_render,
-    data_quality_score,
     created_at,
     loaded_at,
     CASE 
@@ -102,11 +98,10 @@ WHERE language = 'Python'
 ORDER BY stars DESC
 LIMIT 5;
 
-\echo '\n=== 6. REPOS WITH LOW QUALITY SCORES ==='
+\echo '\n=== 6. REPOS WITH MISSING DESCRIPTIONS ==='
 SELECT 
     language,
     repo_full_name,
-    data_quality_score,
     stars,
     commits_last_7_days,
     issues_closed_last_7_days,
@@ -117,7 +112,7 @@ SELECT
         ELSE 'Has description'
     END as desc_status
 FROM stg_repos_validated
-WHERE data_quality_score < 0.70
+WHERE description IS NULL OR description = '' OR LENGTH(description) < 20
 ORDER BY language, stars DESC
 LIMIT 10;
 
@@ -150,7 +145,6 @@ SELECT
     language,
     repo_full_name,
     stars,
-    data_quality_score,
     loaded_at,
     AGE(NOW(), loaded_at) as time_since_load
 FROM stg_repos_validated
@@ -166,8 +160,6 @@ SELECT
     AVG(commits_last_7_days) as avg_commits_7d,
     AVG(issues_closed_last_7_days) as avg_issues_closed_7d,
     AVG(active_contributors) as avg_contributors,
-    AVG(data_quality_score) as avg_quality,
-    COUNT(CASE WHEN data_quality_score >= 0.70 THEN 1 END) as high_quality_repos,
     COUNT(CASE WHEN commits_last_7_days > 0 THEN 1 END) as repos_with_commit_data
 FROM stg_repos_validated
 WHERE language IN ('Python', 'TypeScript', 'Go')

@@ -31,7 +31,6 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 srv.updated_at,
                 srv.uses_render,
                 srv.readme_content,
-                srv.data_quality_score,
                 sre.render_category,
                 sre.render_services,
                 sre.render_complexity_score,
@@ -40,7 +39,6 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre
                 ON srv.repo_full_name = sre.repo_full_name
-            WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
         """)
 
@@ -49,7 +47,7 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
 
 
 async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
-                          source_language: str = None, source_type: str = 'trending',
+                          source_language: str = None,
                           readme_contents: Dict[str, str] = None):
     """
     Store raw repository data in the raw layer.
@@ -58,7 +56,6 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
         repos: List of repository data from GitHub API
         db_pool: Database connection pool
         source_language: Programming language filter used
-        source_type: Type of source ('trending' or 'render_ecosystem')
         readme_contents: Dictionary mapping repo full_name to README content
     """
     async with db_pool.acquire() as conn:
@@ -70,15 +67,14 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
             
             await conn.execute("""
                 INSERT INTO raw_github_repos
-                    (repo_full_name, api_response, readme_content, source_language, source_type)
-                VALUES ($1, $2, $3, $4, $5)
+                    (repo_full_name, api_response, readme_content, source_language)
+                VALUES ($1, $2, $3, $4)
                 ON CONFLICT (repo_full_name) DO UPDATE SET
                     api_response = EXCLUDED.api_response,
                     readme_content = EXCLUDED.readme_content,
                     source_language = EXCLUDED.source_language,
-                    source_type = EXCLUDED.source_type,
                     fetch_timestamp = NOW()
-            """, repo_name, json.dumps(repo), readme, source_language, source_type)
+            """, repo_name, json.dumps(repo), readme, source_language)
 
 
 async def store_raw_metrics(repo_full_name: str, metric_type: str,
