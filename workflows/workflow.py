@@ -46,7 +46,7 @@ async def main_analysis_task() -> Dict:
 
     Spawns parallel tasks for:
     - 3 language-specific analyses (Python, TypeScript, Go)
-    - 1 Render ecosystem fetch
+    - 1 Render projects fetch
 
     Returns execution summary.
     """
@@ -92,7 +92,7 @@ async def main_analysis_task() -> Dict:
             ]
             logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
 
-            # Execute language analysis and Render repos fetch in parallel
+            # Execute language analysis and Render projects fetch in parallel
             results = await asyncio.gather(
                 *language_tasks,
                 fetch_render_repos(),
@@ -365,7 +365,7 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
 @task
 async def fetch_render_repos() -> List[Dict]:
     """
-    Fetch Render ecosystem repos using code search.
+    Fetch independent Render projects using code search.
     Searches for repositories with render.yaml in root directory.
     All repos are assigned language='render' (lowercase) for identification.
     
@@ -386,17 +386,19 @@ async def fetch_render_repos() -> List[Dict]:
         # Code search for render.yaml in root directory
         # API assigns language='render' (lowercase) to all repos automatically
         # Request 100 initially to ensure we get 25+ repos
-        repos = await github_api.search_render_ecosystem(limit=100, created_since=None)
+        # Filter for repos created within last 18 months
+        eighteen_months_ago = datetime.now(timezone.utc) - timedelta(days=548)  # 18 months ≈ 548 days
+        repos = await github_api.search_render_projects(limit=100, created_since=eighteen_months_ago)
         logger.info(f"Found {len(repos)} repos with render.yaml in root (all with language='render')")
         
         if not repos:
-            logger.warning("No Render repos found via code search")
+            logger.warning("No Render projects found via code search")
             return []
         
-        # Target: 25 render repos
+        # Target: 25 render projects
         target_count = 25
         repos_to_process = repos[:target_count]
-        logger.info(f"Processing {len(repos_to_process)} render repos (target={target_count})")
+        logger.info(f"Processing {len(repos_to_process)} render projects (target={target_count})")
         
         # Store in raw layer
         await store_raw_repos(repos_to_process, db_pool, source_language='render')

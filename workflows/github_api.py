@@ -424,15 +424,15 @@ class GitHubAPIClient:
         
         return validated_repos[:limit]
     
-    async def search_render_ecosystem(self, limit: int = 50, created_since: datetime = None) -> List[Dict]:
+    async def search_render_projects(self, limit: int = 50, created_since: datetime = None) -> List[Dict]:
         """
-        Search for Render ecosystem repositories using code search.
+        Search for independent Render projects using code search.
         Finds repositories with render.yaml in root directory, sorted by stars.
         
-        Special handling: Render repos often don't have a primary language detected by GitHub
+        Special handling: Render projects often don't have a primary language detected by GitHub
         (e.g., documentation repos, config-only repos). We assign "render" (lowercase) as the
         language for ALL repos found via render.yaml search, regardless of GitHub's detection.
-        This allows us to identify Render repos by language='render' instead of a separate flag.
+        This allows us to identify Render projects by language='render' instead of a separate flag.
         
         Args:
             limit: Maximum number of results to return
