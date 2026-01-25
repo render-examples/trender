@@ -56,7 +56,7 @@ export default function HomeClient({
       <ScrollableRow 
         title="Render" 
         repos={renderRepos} 
-        icon="/images/render_logomark.png"
+        icon="/images/render-logomark.png"
         selectedRepo={selectedSection === 'render' ? selectedRepo : null}
         onCardClick={(repo) => handleCardClick(repo, 'render')}
         onClosePanel={handleClosePanel}
