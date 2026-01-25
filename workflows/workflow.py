@@ -51,17 +51,6 @@ async def main_analysis_task() -> Dict:
 
     Returns execution summary.
     """
-    # #region agent log
-    import json
-    import sys
-    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:54","message":"main_analysis_task ENTRY","data":{"dev_mode":DEV_MODE},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H4,H5"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
-    
     execution_start = datetime.now(timezone.utc)
     logger.info(f"Workflow started at {execution_start}")
 
@@ -73,27 +62,11 @@ async def main_analysis_task() -> Dict:
             
             logger.info("Python task completed, starting ETL pipeline")
             
-            # #region agent log
-            try:
-                with open(debug_log_path, 'a') as f:
-                    f.write(json.dumps({"location":"workflow.py:66","message":"About to call init_connections for ETL","data":{},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            
             # Initialize connections for ETL pipeline
             try:
                 github_api, db_pool = await init_connections()
                 logger.info("Connections initialized for ETL pipeline")
             except ConnectionError as e:
-                # #region agent log
-                try:
-                    with open(debug_log_path, 'a') as f:
-                        f.write(json.dumps({"location":"workflow.py:75","message":"ConnectionError caught in main_analysis_task","data":{"error_msg":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-                except Exception:
-                    pass
-                # #endregion
-                
                 logger.error(f"FATAL: Cannot connect to database: {e}")
                 logger.error("Exiting workflow gracefully due to connection failure")
                 
@@ -142,14 +115,6 @@ async def main_analysis_task() -> Dict:
                 github_api, db_pool = await init_connections()
                 logger.info("Connections initialized for aggregation")
             except ConnectionError as e:
-                # #region agent log
-                try:
-                    with open(debug_log_path, 'a') as f:
-                        f.write(json.dumps({"location":"workflow.py:108","message":"ConnectionError in production mode aggregation","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-                except Exception:
-                    pass
-                # #endregion
-                
                 logger.error(f"FATAL: Cannot connect to database for aggregation: {e}")
                 logger.error("Exiting workflow gracefully due to connection failure")
                 sys.exit(1)
@@ -176,31 +141,12 @@ async def fetch_language_repos(language: str) -> List[Dict]:
     Returns:
         List of enriched repository dictionaries
     """
-    # #region agent log
-    import json
-    import sys
-    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:135","message":"fetch_language_repos ENTRY","data":{"language":language},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
-    
     logger.info(f"fetch_language_repos START for {language}")
     
     # Initialize connections for this task
     try:
         github_api, db_pool = await init_connections()
     except ConnectionError as e:
-        # #region agent log
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:145","message":"ConnectionError in fetch_language_repos","data":{"language":language,"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
         logger.error(f"FATAL: Cannot connect to database for {language}: {e}")
         logger.error("Exiting workflow gracefully due to connection failure")
         sys.exit(1)
@@ -273,16 +219,6 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
         github_api, db_pool = await init_connections()
         logger.info(f"Connections initialized successfully. Session: {github_api.session is not None}, Pool: {db_pool is not None}")
     except ConnectionError as e:
-        # #region agent log
-        import json
-        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:204","message":"ConnectionError in analyze_repo_batch","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
         logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
         logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
         return []  # Return empty list if we can't even connect
@@ -296,16 +232,6 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
 
         # Process repos in batches of 10
         for batch_idx, batch in enumerate(chunk_list(repos, size=10)):
-            # #region agent log
-            import json
-            debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-            try:
-                with open(debug_log_path, 'a') as f:
-                    f.write(json.dumps({"location":"workflow.py:298","message":"Starting batch processing","data":{"batch_idx":batch_idx,"batch_size":len(batch),"repo_names":[r.get('full_name') for r in batch],"pool_size":db_pool.get_size(),"pool_idle":db_pool.get_idle_size()},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H2,H5"}) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            
             batch_tasks = [
                 analyze_single_repo(repo, github_api, db_pool, readme_contents.get(repo.get('full_name')))
                 for repo in batch
@@ -353,29 +279,11 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     owner, name = repo_full_name.split('/', 1)
 
     # Fetch Render usage detection (no need for commits/issues/contributors)
-    # #region agent log
-    import json
-    import time
-    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:355","message":"Starting API calls","data":{"repo":repo_full_name,"has_readme":readme_content is not None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
-    
     if readme_content is not None:
         # README already fetched, don't call API again
         try:
             render_data = await detect_render_usage(repo, github_api, db_pool)
         except Exception as e:
-            # #region agent log
-            try:
-                with open(debug_log_path, 'a') as f:
-                    f.write(json.dumps({"location":"workflow.py:358","message":"detect_render_usage exception","data":{"repo":repo_full_name,"error_type":type(e).__name__,"error_msg":str(e)[:200]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
-            except Exception:
-                pass
-            # #endregion
             render_data = {}
         
         readme = readme_content
@@ -386,14 +294,6 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
             github_api.fetch_readme(owner, name),
             return_exceptions=True
         )
-        
-        # #region agent log
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:369","message":"API calls completed","data":{"repo":repo_full_name,"render_is_exception":isinstance(render_data, Exception),"readme_is_exception":isinstance(readme, Exception),"render_error":str(render_data)[:200] if isinstance(render_data, Exception) else None,"readme_error":str(readme)[:200] if isinstance(readme, Exception) else None},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H6"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         # Handle exceptions
         render_data = render_data if not isinstance(render_data, Exception) else {}
@@ -412,14 +312,6 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'uses_render': render_data.get('uses_render', False),
         **render_data
     }
-    
-    # #region agent log
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:415","message":"enriched repo data built","data":{"repo":repo_full_name,"initial_uses_render":repo.get('uses_render',False),"render_data_uses_render":render_data.get('uses_render',False),"final_uses_render":enriched['uses_render']},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H3,H4"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
     
     # Parse ISO datetime strings to timezone-aware datetime objects for PostgreSQL
     # GitHub API returns ISO 8601 with 'Z' suffix (UTC timezone)
@@ -461,17 +353,6 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
 
 async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
     """Store enriched repository data in staging layer."""
-    # #region agent log
-    import json
-    import time
-    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:454","message":"store_in_staging ENTRY","data":{"repo":repo.get('repo_full_name'),"uses_render":repo.get('uses_render',False),"quality_score":repo.get('data_quality_score',0.0)},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H3"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
-    
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO stg_repos_validated
@@ -491,14 +372,6 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
             repo.get('created_at'), repo.get('updated_at'),
             repo.get('uses_render', False),
             repo.get('readme_content'), repo.get('data_quality_score', 0.0))
-        
-        # #region agent log
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:474","message":"store_in_staging COMPLETE","data":{"repo":repo.get('repo_full_name')},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H3,H5"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
 
 
 @task
@@ -510,37 +383,19 @@ async def fetch_render_repos() -> List[Dict]:
     Returns:
         List of repository dictionaries
     """
-    # #region agent log
-    import json
-    import sys
-    debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(json.dumps({"location":"workflow.py:400","message":"fetch_render_repos ENTRY","data":{},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
-    
     logger.info("fetch_render_repos START - multi-strategy search")
     
     # Initialize connections
     try:
         github_api, db_pool = await init_connections()
     except ConnectionError as e:
-        # #region agent log
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:410","message":"ConnectionError in fetch_render_repos","data":{"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
         logger.error(f"FATAL: Cannot connect to database for render repos: {e}")
         logger.error("Exiting workflow gracefully due to connection failure")
         sys.exit(1)
     
     try:
         # Multi-strategy search: path + org + topic
+        # Fetch more than needed (50) to account for quality filtering
         repos = await github_api.search_render_ecosystem(limit=50)
         logger.info(f"Found {len(repos)} total Render ecosystem repos")
         
@@ -550,14 +405,6 @@ async def fetch_render_repos() -> List[Dict]:
         # Mark all as Render projects
         for repo in repos:
             repo['uses_render'] = True
-        
-        # #region agent log
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:528","message":"fetch_render_repos - marked repos as Render","data":{"count":len(repos),"sample_repos":[r.get('full_name') for r in repos[:5]]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H4"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         # Store in raw layer
         await store_raw_repos(repos, db_pool, source_type='render_ecosystem')
@@ -592,25 +439,12 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     logger.info(f"Successful tasks: {successful_tasks}/{len(all_results)}")
     
     async with db_pool.acquire() as conn:
-        # #region agent log
-        import json
-        import time
-        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
+        # Extract repos in two parts:
+        # 1. Top trending repos by stars (language-agnostic)
+        # 2. ALL qualifying Render repos (regardless of stars)
         
-        # Check what's in staging BEFORE extraction
-        staging_count = await conn.fetchval("SELECT COUNT(*) FROM stg_repos_validated WHERE uses_render = TRUE")
-        staging_render_repos = await conn.fetch("SELECT repo_full_name, uses_render, data_quality_score FROM stg_repos_validated WHERE uses_render = TRUE LIMIT 10")
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:559","message":"aggregate_results - staging state","data":{"render_repos_in_staging":staging_count,"sample_repos":[dict(r) for r in staging_render_repos]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1,H2,H3"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        # Extract all high-quality repos from staging (no date filtering)
-        # Join with render enrichment to get full data
-        # Pull top 50 per language = 150 total repos
-        repos = await conn.fetch("""
+        # Part 1: Top 100 trending repos (general, high-stars)
+        general_repos = await conn.fetch("""
             SELECT
                 srv.repo_full_name,
                 srv.repo_url,
@@ -631,19 +465,45 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
             LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
             WHERE srv.data_quality_score >= 0.70
             ORDER BY srv.stars DESC
-            LIMIT 150
+            LIMIT 100
         """)
         
-        # #region agent log
-        render_repos_extracted = sum(1 for r in repos if r.get('uses_render'))
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:588","message":"aggregate_results - extraction complete","data":{"total_extracted":len(repos),"render_repos_extracted":render_repos_extracted},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
-        except Exception:
-            pass
-        # #endregion
+        # Part 2: ALL Render repos with quality >= 0.60 (lower threshold for Render)
+        render_repos = await conn.fetch("""
+            SELECT
+                srv.repo_full_name,
+                srv.repo_url,
+                srv.language,
+                srv.description,
+                srv.stars,
+                srv.created_at,
+                srv.updated_at,
+                srv.uses_render,
+                srv.readme_content,
+                srv.data_quality_score,
+                sre.render_category,
+                sre.render_services,
+                sre.render_complexity_score,
+                sre.has_blueprint_button,
+                sre.service_count
+            FROM stg_repos_validated srv
+            LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
+            WHERE srv.uses_render = TRUE
+              AND srv.data_quality_score >= 0.60
+            ORDER BY srv.stars DESC
+        """)
         
-        logger.info(f"Extracted {len(repos)} recent repos from staging")
+        # Merge repos (deduplicate by repo_full_name)
+        seen_repos = set()
+        repos = []
+        
+        for repo in list(general_repos) + list(render_repos):
+            repo_name = repo.get('repo_full_name')
+            if repo_name not in seen_repos:
+                seen_repos.add(repo_name)
+                repos.append(repo)
+        
+        logger.info(f"Extracted {len(general_repos)} general + {len(render_repos)} render repos = {len(repos)} total (deduplicated) from staging")
         
         if not repos:
             logger.warning("No repos found in staging for analytics")
@@ -655,22 +515,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
         
         # Load to analytics (consolidated logic)
         await load_to_analytics_simple(repos, conn)
-        
-        # region agent log
-        import json
-        import time
-        debug_log_path = '/Users/shifrawilliams/Documents/Repos/trender/.cursor/debug.log'
-        
-        # Check analytics tables AFTER load
-        analytics_render_count = await conn.fetchval("SELECT COUNT(*) FROM dim_repositories WHERE is_current = TRUE AND uses_render = TRUE")
-        analytics_render_repos = await conn.fetch("SELECT repo_full_name, uses_render, language FROM dim_repositories WHERE is_current = TRUE AND uses_render = TRUE LIMIT 10")
-        
-        try:
-            with open(debug_log_path, 'a') as f:
-                f.write(json.dumps({"location":"workflow.py:609","message":"aggregate_results - analytics state AFTER load","data":{"render_repos_in_analytics":analytics_render_count,"sample_repos":[dict(r) for r in analytics_render_repos]},"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-        except Exception:
-            pass
-        # endregion
         
         return {
             'repos_processed': len(repos),
