@@ -67,7 +67,10 @@ echo "📊 Initializing database schema..."
 echo "Running: database/init.sql"
 echo ""
 
-if psql "$DATABASE_URL" -f "$INIT_SQL"; then
+# Change to database directory so relative paths in init.sql work
+cd "$PROJECT_ROOT/database"
+
+if psql "$DATABASE_URL" -f "init.sql"; then
     echo ""
     echo -e "${GREEN}✅ Database setup completed successfully!${NC}"
     echo ""

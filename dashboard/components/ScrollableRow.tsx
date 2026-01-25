@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
@@ -60,10 +60,39 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
 export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   
-  // Fill with placeholders if we have fewer than 50 repos
+  // Fill with placeholders if we have fewer than 25 repos
   const displayRepos = repos.length > 0 
-    ? [...repos, ...generatePlaceholderRepos(Math.max(0, 50 - repos.length), repos[0]?.language || title)]
-    : generatePlaceholderRepos(50, title)
+    ? [...repos, ...generatePlaceholderRepos(Math.max(0, 25 - repos.length), repos[0]?.language || title)]
+    : generatePlaceholderRepos(25, title)
+
+  // Triple the repos for infinite scrolling
+  const infiniteRepos = [...displayRepos, ...displayRepos, ...displayRepos]
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = container
+      const singleSetWidth = scrollWidth / 3
+
+      // If scrolled to the end, jump back to middle set
+      if (scrollLeft + clientWidth >= scrollWidth - 10) {
+        container.scrollLeft = singleSetWidth + (scrollLeft + clientWidth - scrollWidth)
+      }
+      // If scrolled to the beginning, jump to middle set
+      else if (scrollLeft <= 10) {
+        container.scrollLeft = singleSetWidth + scrollLeft
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll)
+    
+    // Start in the middle set
+    container.scrollLeft = (container.scrollWidth / 3)
+
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [infiniteRepos])
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -116,10 +145,10 @@ export default function ScrollableRow({ title, repos, icon }: ScrollableRowProps
       <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-hide">
         <LayoutGroup>
           <div className="flex gap-4 px-8 pb-4">
-            {displayRepos.length === 0 ? (
+            {infiniteRepos.length === 0 ? (
               <LoadingSkeleton count={10} />
             ) : (
-              displayRepos.map((repo, index) => (
+              infiniteRepos.map((repo, index) => (
                 <RepoCard key={`${repo.repo_full_name}-${index}`} repo={repo} />
               ))
             )}

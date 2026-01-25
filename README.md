@@ -290,25 +290,64 @@ Other required variables (add as you complete the setup):
 
 ### 5. Initialize Database Schema
 
-#### Option 1: Using the init.sql script (Recommended)
+#### Option 1: Using the setup script (Recommended)
+
+The `db_setup.sh` script provides a user-friendly way to initialize the database with connection checking, error handling, and colored output:
+
+```bash
+# Make the script executable (first time only)
+chmod +x bin/db_setup.sh
+
+# Run the setup script
+# The script will automatically load DATABASE_URL from your .env file
+./bin/db_setup.sh
+
+# Or provide DATABASE_URL directly:
+DATABASE_URL=YOUR_DATABASE_URL ./bin/db_setup.sh
+```
+
+Expected output:
+```
+🚀 Trender Database Setup
+==========================
+
+📄 Loading environment variables from .env file...
+✓ Environment variables loaded
+
+📁 Project root: /path/to/trender
+
+🔍 Checking database connection...
+✓ Database connection successful
+
+📊 Initializing database schema...
+Running: database/init.sql
+
+Creating Raw Layer tables...
+Creating Staging Layer tables...
+Creating Analytics Layer tables...
+Creating Analytics Views...
+
+✅ Database setup completed successfully!
+```
+
+#### Option 2: Using the init.sql script directly
 
 ```bash
 # Connect to your Render PostgreSQL instance and run the initialization script
-
-DATABASE_URL=YOUR_DATABASE_URL
-psql $DATABASE_URL -f database/init.sql
+cd database
+psql $DATABASE_URL -f init.sql
 ```
 
-#### Option 2: Run schema files individually
+#### Option 3: Run schema files individually
 
 If you prefer to run the schema files one at a time:
 
 ```bash
-# Run each schema file in order
-psql $DATABASE_URL -f database/schema/01_raw_layer.sql
-psql $DATABASE_URL -f database/schema/02_staging_layer.sql
-psql $DATABASE_URL -f database/schema/03_analytics_layer.sql
-psql $DATABASE_URL -f database/schema/04_views.sql
+cd database
+psql $DATABASE_URL -f schema/01_raw_layer.sql
+psql $DATABASE_URL -f schema/02_staging_layer.sql
+psql $DATABASE_URL -f schema/03_analytics_layer.sql
+psql $DATABASE_URL -f schema/04_views.sql
 ```
 
 #### What gets created:
@@ -362,9 +401,11 @@ This removes the unused `fact_workflow_executions` table and `analytics_workflow
 
 #### Troubleshooting
 
-- **Connection refused**: Ensure your `DATABASE_URL` is correct and the Render PostgreSQL instance is active
+- **"DATABASE_URL not set"**: Ensure you have a `.env` file with `DATABASE_URL` or export it in your shell
+- **"Could not connect to database"**: Verify your `DATABASE_URL` is correct and the Render PostgreSQL instance is active
 - **Permission denied**: Make sure you're using the connection string with full admin privileges
 - **Tables already exist**: Drop the database and recreate it, or use `DROP TABLE IF EXISTS` statements
+- **"No such file or directory" errors**: Make sure you're running from the correct directory (use the `db_setup.sh` script to avoid this issue)
 
 ### 6. Deploy Services via render.yaml
 
@@ -570,17 +611,24 @@ npm run dev
 
 If you need to recreate or update the schema:
 
+**Option 1: Using the setup script (Recommended)**
 ```bash
-psql $DATABASE_URL -f database/schema/01_raw_layer.sql
-psql $DATABASE_URL -f database/schema/02_staging_layer.sql
-psql $DATABASE_URL -f database/schema/03_analytics_layer.sql
-psql $DATABASE_URL -f database/schema/04_views.sql
+./bin/db_setup.sh
 ```
 
-Or use the complete initialization script:
-
+**Option 2: Using psql directly**
 ```bash
-psql $DATABASE_URL -f database/init.sql
+cd database
+psql $DATABASE_URL -f init.sql
+```
+
+**Option 3: Run individual schema files**
+```bash
+cd database
+psql $DATABASE_URL -f schema/01_raw_layer.sql
+psql $DATABASE_URL -f schema/02_staging_layer.sql
+psql $DATABASE_URL -f schema/03_analytics_layer.sql
+psql $DATABASE_URL -f schema/04_views.sql
 ```
 
 If upgrading from an older version, apply the cleanup migration:
