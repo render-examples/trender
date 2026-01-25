@@ -1,5 +1,6 @@
 -- Analytics Views
 -- Optimized views for dashboard queries
+-- Note: Render repos are identified by language='render' (no separate uses_render flag)
 
 -- View: analytics_trending_repos_current
 -- Purpose: Current top trending repositories across all languages
@@ -10,7 +11,7 @@ SELECT
   dr.language,
   dr.description,
   dr.readme_content,
-  dr.uses_render,
+  (dr.language = 'render') as uses_render,
   dr.render_category,
   fs.stars,
   fs.star_velocity,
@@ -50,7 +51,7 @@ FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
 LEFT JOIN stg_render_enrichment sre ON dr.repo_full_name = sre.repo_full_name
 WHERE dr.is_current = TRUE
-  AND dr.uses_render = TRUE
+  AND dr.language = 'render'
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
 ORDER BY fs.momentum_score DESC;
 
@@ -63,14 +64,14 @@ SELECT
   dr.repo_url,
   dr.description,
   dr.readme_content,
-  dr.uses_render,
+  (dr.language = 'render') as uses_render,
   dr.render_category,
   fs.stars,
   fs.momentum_score,
   fs.star_velocity,
   fs.rank_in_language,
   fs.snapshot_date,
-  COUNT(CASE WHEN dr.uses_render THEN 1 END) OVER (PARTITION BY dl.language_name) as render_adoption_count
+  COUNT(CASE WHEN dr.language = 'render' THEN 1 END) OVER (PARTITION BY dl.language_name) as render_adoption_count
 FROM dim_languages dl
 JOIN dim_repositories dr ON dl.language_name = dr.language
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
@@ -106,8 +107,8 @@ SELECT
   SUM(fs.stars) as total_stars,
   AVG(fs.stars) as avg_stars,
   AVG(fs.momentum_score) as avg_momentum,
-  COUNT(CASE WHEN dr.uses_render THEN 1 END) as render_projects,
-  ROUND((COUNT(CASE WHEN dr.uses_render THEN 1 END)::DECIMAL / NULLIF(COUNT(DISTINCT dr.repo_key), 0)) * 100, 2) as render_adoption_percentage
+  COUNT(CASE WHEN dr.language = 'render' THEN 1 END) as render_projects,
+  ROUND((COUNT(CASE WHEN dr.language = 'render' THEN 1 END)::DECIMAL / NULLIF(COUNT(DISTINCT dr.repo_key), 0)) * 100, 2) as render_adoption_percentage
 FROM dim_languages dl
 LEFT JOIN dim_repositories dr ON dl.language_name = dr.language AND dr.is_current = TRUE
 LEFT JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key

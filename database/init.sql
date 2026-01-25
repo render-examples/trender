@@ -41,7 +41,7 @@
 \echo ''
 \echo 'ANALYTICS LAYER - DIMENSIONS (3 tables):'
 \echo '  - dim_repositories: Repo master data (SCD Type 2)'
-\echo '  - dim_languages: Language metadata (Python, TypeScript, Go)'
+\echo '  - dim_languages: Language metadata (Python, TypeScript, Go, render)'
 \echo '  - dim_render_services: Service types (web, worker, cron, etc.)'
 \echo ''
 \echo 'ANALYTICS LAYER - FACTS (2 tables):'

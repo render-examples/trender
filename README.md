@@ -1,15 +1,19 @@
 # Trender: GitHub Trending Analytics Platform
 
-A batch analytics platform with a **3-layer data engineering pipeline** (Raw → Staging → Analytics) that analyzes trending GitHub repositories across 3 programming languages (Python, TypeScript/Next.js, and Go). Leverages Render Workflows' distributed task execution to process data in parallel, storing results in a dimensional model for high-performance analytics.
+A batch analytics platform with a **3-layer data engineering pipeline** (Raw → Staging → Analytics) that analyzes trending GitHub repositories across 3 programming languages (Python, TypeScript/Next.js, and Go) plus the Render ecosystem. Leverages Render Workflows' distributed task execution to process data in parallel, storing results in a dimensional model for high-performance analytics.
 
 ## Key Features
 
-- **Multi-Language Analysis**: Tracks Python, TypeScript/Next.js, and Go repositories
+- **Multi-Language Analysis**: Tracks Python, TypeScript/Next.js, Go, and Render ecosystem repositories
 - **3-Layer Data Pipeline**: Raw ingestion → Staging validation → Analytics dimensional model
 - **Parallel Processing**: 4 concurrent workflow tasks using Render Workflows SDK
-- **Render Ecosystem Spotlight**: Dedicated showcase for Render-deployed projects
+- **Render Ecosystem Spotlight**: Dedicated showcase for Render-deployed projects (identified by `language='render'`)
 - **Real-time Dashboard**: Next.js 14 dashboard with analytics visualizations
 - **Hourly Updates**: Automated cron job triggers workflow execution
+
+## Architecture Note
+
+**Render Repos Identification**: Repositories with `render.yaml` in their root directory are assigned `language='render'` (lowercase) in the database, allowing clean identification without a separate boolean flag. This simplifies queries and eliminates the need for maintaining dual identification logic.
 
 ## Architecture
 

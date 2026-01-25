@@ -7,6 +7,7 @@
 
 -- Dimension: dim_repositories
 -- Purpose: Repository dimension with SCD Type 2 (track changes over time)
+-- Note: Render repos are identified by language='render' (no separate uses_render flag needed)
 CREATE TABLE IF NOT EXISTS dim_repositories (
   repo_key SERIAL PRIMARY KEY,
   repo_full_name VARCHAR(255) NOT NULL,
@@ -15,7 +16,6 @@ CREATE TABLE IF NOT EXISTS dim_repositories (
   readme_content TEXT,
   language VARCHAR(50) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
-  uses_render BOOLEAN DEFAULT FALSE,
   render_category VARCHAR(50),
   valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   valid_to TIMESTAMPTZ,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS dim_repositories (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_repos_name_current_unique 
   ON dim_repositories(repo_full_name) WHERE is_current = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dim_repos_language ON dim_repositories(language);
-CREATE INDEX IF NOT EXISTS idx_dim_repos_render ON dim_repositories(uses_render) WHERE uses_render = TRUE;
+CREATE INDEX IF NOT EXISTS idx_dim_repos_render ON dim_repositories(language) WHERE language = 'render';
 CREATE INDEX IF NOT EXISTS idx_dim_repos_valid ON dim_repositories(valid_from, valid_to);
 
 -- Dimension: dim_languages
@@ -41,11 +41,12 @@ CREATE TABLE IF NOT EXISTS dim_languages (
 );
 
 -- Seed data for dim_languages
--- Only seed the 3 target languages; others will be auto-created by the workflow as needed
+-- Only seed the 3 target languages plus render; others will be auto-created by the workflow as needed
 INSERT INTO dim_languages (language_name, language_category, ecosystem_size) VALUES
   ('Python', 'general', 'large'),
   ('TypeScript', 'web', 'large'),
-  ('Go', 'systems', 'large')
+  ('Go', 'systems', 'large'),
+  ('render', 'platform', 'medium')
 ON CONFLICT (language_name) DO NOTHING;
 
 -- Dimension: dim_render_services

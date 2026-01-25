@@ -314,7 +314,8 @@ class GitHubAPIClient:
         result = await self._api_call(url)
         return result.get('items', []) if result else []
 
-    async def search_repos_by_path(self, filename: str, limit: int = 50, created_since: datetime = None) -> List[Dict]:
+    async def search_repos_by_path(self, filename: str, limit: int = 50, created_since: datetime = None, 
+                                   require_language: bool = True, default_language: str = None) -> List[Dict]:
         """
         Search for repositories containing a file in the root directory using code search.
         Uses GitHub's code search API which properly supports filename matching.
@@ -323,10 +324,11 @@ class GitHubAPIClient:
             filename: Filename to search for (e.g., 'render.yaml')
             limit: Maximum number of results
             created_since: Only return repos created since this date (optional)
+            require_language: If True, filter out repos without language. If False, accept all repos.
+            default_language: Default language to assign to repos without one (e.g., 'Unknown')
         
         Returns:
             List of repository data dictionaries ordered by stars descending
-            Only includes repos with a valid (non-null, non-empty) language
         """
         # Use code search API which properly supports path/filename matching
         query = f"filename:{filename}"
@@ -348,15 +350,21 @@ class GitHubAPIClient:
         # Extract unique repositories from code search results
         seen_repos = set()
         repos = []
+        repos_without_language = 0
         
         for item in result.get('items', []):
             repo_data = item.get('repository', {})
             repo_full_name = repo_data.get('full_name')
             repo_language = repo_data.get('language')
             
-            # Only include repos with a valid language (non-null, non-empty)
+            # Handle repos without language
             if not repo_language:
-                continue
+                if require_language:
+                    repos_without_language += 1
+                    continue
+                elif default_language:
+                    # Assign default language
+                    repo_data['language'] = default_language
             
             # Only include each repo once, and check if file is in root
             if repo_full_name and repo_full_name not in seen_repos:
@@ -372,7 +380,10 @@ class GitHubAPIClient:
         # Sort by stars descending to prioritize quality
         repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
-        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory (all with valid language)")
+        if repos_without_language > 0:
+            logger.info(f"Filtered out {repos_without_language} repos without language")
+        
+        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory")
         
         return repos[:limit]
     
@@ -381,21 +392,34 @@ class GitHubAPIClient:
         Search for Render ecosystem repositories using code search.
         Finds repositories with render.yaml in root directory, sorted by stars.
         
+        Special handling: Render repos often don't have a primary language detected by GitHub
+        (e.g., documentation repos, config-only repos). We assign "render" (lowercase) as the
+        language for ALL repos found via render.yaml search, regardless of GitHub's detection.
+        This allows us to identify Render repos by language='render' instead of a separate flag.
+        
         Args:
             limit: Maximum number of results to return
             created_since: Only return repos created since this date (optional)
         
         Returns:
             List of repository data dictionaries sorted by stars
+            All repos will have language='render' (lowercase)
         """
         logger.info("=== Code search for render.yaml in root ===")
         if created_since:
             logger.info(f"Filtering for repos created since {created_since.strftime('%Y-%m-%d')}")
         
         try:
-            # Code search for render.yaml in root (sorted by stars)
-            repos = await self.search_repos_by_path('render.yaml', limit=limit, created_since=created_since)
-            logger.info(f"Found {len(repos)} repos via code search")
+            # Code search for render.yaml in root
+            # Don't require language, assign "render" (lowercase) as default for ALL repos
+            repos = await self.search_repos_by_path(
+                'render.yaml', 
+                limit=limit, 
+                created_since=created_since,
+                require_language=False,  # Don't filter out repos without language
+                default_language='render'  # Assign "render" (lowercase) as language
+            )
+            logger.info(f"Found {len(repos)} repos via code search (all assigned language='render')")
             return repos
         except Exception as e:
             logger.warning(f"Code search failed: {e}")

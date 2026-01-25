@@ -290,9 +290,6 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         return None
     
     owner, name = repo_full_name.split('/', 1)
-
-    # Check if repo was already marked as using Render (from code search)
-    uses_render = repo.get('uses_render', False)
     
     # Fetch README if not provided
     if readme_content is None:
@@ -314,7 +311,6 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         'stars': repo.get('stargazers_count', 0),
         'created_at': repo.get('created_at'),
         'updated_at': repo.get('updated_at'),
-        'uses_render': uses_render,
     }
     
     # Parse ISO datetime strings to timezone-aware datetime objects for PostgreSQL
@@ -326,7 +322,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         enriched['updated_at'] = datetime.fromisoformat(enriched['updated_at'].replace('Z', '+00:00'))
 
     # Store in staging layer
-    logger.info(f"Storing {enriched['repo_full_name']} to staging (language={language}, uses_render={uses_render})")
+    logger.info(f"Storing {enriched['repo_full_name']} to staging (language={language})")
     await store_in_staging(enriched, db_pool)
     
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
@@ -345,18 +341,16 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
         await conn.execute("""
             INSERT INTO stg_repos_validated
                 (repo_full_name, repo_url, language, description, stars,
-                 created_at, updated_at, uses_render, readme_content)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 created_at, updated_at, readme_content)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (repo_full_name) DO UPDATE SET
                 stars = EXCLUDED.stars,
                 updated_at = EXCLUDED.updated_at,
-                uses_render = EXCLUDED.uses_render,
                 readme_content = EXCLUDED.readme_content,
                 loaded_at = NOW()
         """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
             repo.get('description'), repo.get('stars', 0),
             repo.get('created_at'), repo.get('updated_at'),
-            repo.get('uses_render', False),
             repo.get('readme_content'))
 
 
@@ -365,6 +359,7 @@ async def fetch_render_repos() -> List[Dict]:
     """
     Fetch Render ecosystem repos using code search.
     Searches for repositories with render.yaml in root directory.
+    All repos are assigned language='render' (lowercase) for identification.
     
     Returns:
         List of repository dictionaries
@@ -381,10 +376,10 @@ async def fetch_render_repos() -> List[Dict]:
     
     try:
         # Code search for render.yaml in root directory
-        # API now filters out repos without language automatically
-        # Request 100 initially to ensure we get 25+ after filtering
+        # API assigns language='render' (lowercase) to all repos automatically
+        # Request 100 initially to ensure we get 25+ repos
         repos = await github_api.search_render_ecosystem(limit=100, created_since=None)
-        logger.info(f"Found {len(repos)} repos with render.yaml in root (all with valid language)")
+        logger.info(f"Found {len(repos)} repos with render.yaml in root (all with language='render')")
         
         if not repos:
             logger.warning("No Render repos found via code search")
@@ -394,10 +389,6 @@ async def fetch_render_repos() -> List[Dict]:
         target_count = 25
         repos_to_process = repos[:target_count]
         logger.info(f"Processing {len(repos_to_process)} render repos (target={target_count})")
-        
-        # Mark all as Render projects
-        for repo in repos_to_process:
-            repo['uses_render'] = True
         
         # Store in raw layer
         await store_raw_repos(repos_to_process, db_pool, source_language='render')
@@ -433,33 +424,52 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     
     async with db_pool.acquire() as conn:
         # Extract repos in two parts:
-        # 1. Top trending repos by stars (language-agnostic)
-        # 2. ALL qualifying Render repos (regardless of stars)
+        # 1. Top trending repos per language (balanced across Python, TypeScript, Go)
+        # 2. ALL qualifying Render repos (language='render')
         
-        # Part 1: Top 100 trending repos (general, high-stars)
+        # Part 1: Top 50 repos per language for balanced representation
         general_repos = await conn.fetch("""
+            WITH ranked_repos AS (
+                SELECT
+                    srv.repo_full_name,
+                    srv.repo_url,
+                    srv.language,
+                    srv.description,
+                    srv.stars,
+                    srv.created_at,
+                    srv.updated_at,
+                    srv.uses_render,
+                    srv.readme_content,
+                    sre.render_category,
+                    sre.render_services,
+                    sre.render_complexity_score,
+                    sre.has_blueprint_button,
+                    sre.service_count,
+                    ROW_NUMBER() OVER (PARTITION BY srv.language ORDER BY srv.stars DESC) as lang_rank
+                FROM stg_repos_validated srv
+                LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
+            )
             SELECT
-                srv.repo_full_name,
-                srv.repo_url,
-                srv.language,
-                srv.description,
-                srv.stars,
-                srv.created_at,
-                srv.updated_at,
-                srv.uses_render,
-                srv.readme_content,
-                sre.render_category,
-                sre.render_services,
-                sre.render_complexity_score,
-                sre.has_blueprint_button,
-                sre.service_count
-            FROM stg_repos_validated srv
-            LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
-            ORDER BY srv.stars DESC
-            LIMIT 100
+                repo_full_name,
+                repo_url,
+                language,
+                description,
+                stars,
+                created_at,
+                updated_at,
+                uses_render,
+                readme_content,
+                render_category,
+                render_services,
+                render_complexity_score,
+                has_blueprint_button,
+                service_count
+            FROM ranked_repos
+            WHERE lang_rank <= 50
+            ORDER BY stars DESC
         """)
         
-        # Part 2: ALL Render repos
+        # Part 2: ALL Render repos (identified by language='render')
         render_repos = await conn.fetch("""
             SELECT
                 srv.repo_full_name,
@@ -469,7 +479,6 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 srv.stars,
                 srv.created_at,
                 srv.updated_at,
-                srv.uses_render,
                 srv.readme_content,
                 sre.render_category,
                 sre.render_services,
@@ -478,7 +487,7 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                 sre.service_count
             FROM stg_repos_validated srv
             LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
-            WHERE srv.uses_render = TRUE
+            WHERE srv.language = 'render'
             ORDER BY srv.stars DESC
         """)
         
@@ -526,24 +535,12 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
         repos: List of repository records from staging
         conn: Database connection
     """
-    # region agent log
-    lang_counts = {}
-    for r in repos:
-        lang_counts[r.get('language', 'NULL')] = lang_counts.get(r.get('language', 'NULL'), 0) + 1
-    logger.info(f"[DEBUG-A] load_to_analytics_simple ENTRY: total_repos={len(repos)}, lang_breakdown={lang_counts}")
-    # endregion
-    
     today = date.today()
     now = datetime.now(timezone.utc)
     
-    # region agent log
-    successful_loads = {'Python': 0, 'TypeScript': 0, 'Go': 0, 'Other': 0}
-    failed_loads = {'Python': 0, 'TypeScript': 0, 'Go': 0, 'Other': 0}
-    # endregion
-    
     # Calculate max stars for normalization (separately for general and Render repos)
-    general_repos = [r for r in repos if not r.get('uses_render', False)]
-    render_repos = [r for r in repos if r.get('uses_render', False)]
+    general_repos = [r for r in repos if r.get('language') != 'render']
+    render_repos = [r for r in repos if r.get('language') == 'render']
     
     max_stars_general = max([r.get('stars', 1) for r in general_repos]) if general_repos else 1
     max_stars_render = max([r.get('stars', 1) for r in render_repos]) if render_repos else 1
@@ -587,27 +584,22 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
         if not repo_name:
             continue
         
-        # region agent log
-        repo_lang = repo.get('language', 'NULL')
-        # endregion
-        
         try:
             # Upsert into dim_repositories (simplified, no SCD Type 2)
             await conn.execute("""
                 INSERT INTO dim_repositories
                     (repo_full_name, repo_url, description, readme_content, language, 
-                     created_at, uses_render, render_category, valid_from, is_current)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), TRUE)
+                     created_at, render_category, valid_from, is_current)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), TRUE)
                 ON CONFLICT (repo_full_name) 
                 WHERE is_current = TRUE
                 DO UPDATE SET
                     repo_url = EXCLUDED.repo_url,
                     description = EXCLUDED.description,
-                    readme_content = EXCLUDED.readme_content,
-                    uses_render = EXCLUDED.uses_render
+                    readme_content = EXCLUDED.readme_content
             """, repo_name, repo['repo_url'], repo['description'],
                 repo['readme_content'], repo['language'], repo['created_at'],
-                repo['uses_render'], 'community')
+                'community')
             
             # Get keys for fact table
             repo_key = await conn.fetchval("""
@@ -616,39 +608,25 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
             """, repo_name)
             
             if not repo_key:
-                # region agent log
-                lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
-                failed_loads[lang_bucket] += 1
-                logger.warning(f"[DEBUG-A,C] SKIP: Missing repo_key for {repo_name}")
-                # endregion
+                logger.warning(f"Missing repo_key for {repo_name}, skipping")
                 continue
             
-            # Get or create language_key (auto-insert unknown languages)
+            # Get language_key (all 4 languages should exist: Python, TypeScript, Go, render)
             language_key = await conn.fetchval("""
                 SELECT language_key FROM dim_languages
                 WHERE language_name = $1
             """, repo['language'])
             
             if not language_key:
-                # Auto-insert unknown language
-                language_key = await conn.fetchval("""
-                    INSERT INTO dim_languages (language_name, language_category, ecosystem_size)
-                    VALUES ($1, 'general', 'medium')
-                    ON CONFLICT (language_name) DO UPDATE SET language_name = EXCLUDED.language_name
-                    RETURNING language_key
-                """, repo['language'])
-                logger.info(f"Auto-created language entry for: {repo['language']}")
-            
-            # region agent log
-            logger.info(f"[DEBUG-C] Key lookup: repo={repo_name}, lang={repo_lang}, repo_key={repo_key}, lang_key={language_key}")
-            # endregion
+                logger.error(f"Language '{repo['language']}' not found in dim_languages for {repo_name}. Expected one of: Python, TypeScript, Go, render")
+                continue
             
             # Calculate momentum score using star-recency formula
             stars = repo.get('stars', 0)
-            uses_render = repo.get('uses_render', False)
+            is_render = repo.get('language') == 'render'
             
             # Normalize stars based on appropriate max (general vs render)
-            max_stars = max_stars_render if uses_render else max_stars_general
+            max_stars = max_stars_render if is_render else max_stars_general
             normalized_stars = stars / max_stars if max_stars > 0 else 0.0
             
             # Calculate recency score
@@ -674,7 +652,7 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
             """, repo_key, language_key, today, repo['stars'], momentum_score, idx)
             
             # If Render repo, also populate fact_render_usage
-            if uses_render and repo.get('render_services'):
+            if is_render and repo.get('render_services'):
                 render_services = repo.get('render_services', [])
                 complexity = repo.get('render_complexity_score', 0)
                 has_blueprint = repo.get('has_blueprint_button', False)
@@ -699,21 +677,9 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
                         
                         logger.debug(f"Inserted fact_render_usage for {repo_name}, service: {service_type}")
             
-            # region agent log
-            lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
-            successful_loads[lang_bucket] += 1
-            # endregion
         except Exception as e:
-            # region agent log
-            lang_bucket = repo_lang if repo_lang in ['Python', 'TypeScript', 'Go'] else 'Other'
-            failed_loads[lang_bucket] += 1
-            logger.error(f"[DEBUG-A,C] EXCEPTION loading repo={repo_name}, lang={repo_lang}: {type(e).__name__}: {e}")
-            # endregion
+            logger.error(f"Error loading repo {repo_name}: {type(e).__name__}: {e}")
             continue
-    
-    # region agent log
-    logger.info(f"[DEBUG-A,B] load_to_analytics_simple EXIT: successful={successful_loads}, failed={failed_loads}, total={len(repos)}")
-    # endregion
     
     logger.info(f"Loaded {len(repos)} repos to analytics layer")
 
