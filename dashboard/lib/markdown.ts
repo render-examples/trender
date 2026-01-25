@@ -3,21 +3,6 @@
 import { marked } from 'marked';
 
 /**
- * Configure marked options for optimal rendering
- * Following recommendations from https://marked.js.org/#specifications
- */
-marked.setOptions({
-  // Enable GitHub Flavored Markdown
-  gfm: true,
-  // Break on single line breaks (like GitHub)
-  breaks: true,
-  // Use smarter list behavior than markdown.pl
-  pedantic: false,
-  // Sanitization is handled separately with DOMPurify
-  // This is more secure than marked's built-in sanitizer
-});
-
-/**
  * Get DOMPurify instance (client-side only)
  * This ensures proper loading in browser environment
  */
@@ -51,15 +36,54 @@ function decodeHTMLEntities(text: string): string {
 }
 
 /**
+ * Convert relative GitHub image URLs to absolute raw.githubusercontent.com URLs
+ * 
+ * @param src - The image src attribute
+ * @param repoUrl - The repository URL (e.g., https://github.com/owner/repo)
+ * @returns Absolute URL or original if already absolute
+ */
+function resolveImageUrl(src: string, repoUrl: string): string {
+  // Skip if already absolute URL
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    return src;
+  }
+
+  // Parse repo URL to get owner and repo name
+  // Example: https://github.com/owner/repo -> owner/repo
+  const match = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+  if (!match) {
+    return src;
+  }
+
+  const repoPath = match[1];
+  
+  // Try main branch first (most common default now)
+  const baseUrl = `https://raw.githubusercontent.com/${repoPath}/main`;
+
+  // Handle different relative path formats
+  if (src.startsWith('./')) {
+    // ./path/to/image.png -> /path/to/image.png
+    return `${baseUrl}/${src.substring(2)}`;
+  } else if (src.startsWith('/')) {
+    // /path/to/image.png
+    return `${baseUrl}${src}`;
+  } else {
+    // path/to/image.png (relative)
+    return `${baseUrl}/${src}`;
+  }
+}
+
+/**
  * Safely render markdown to HTML using marked and DOMPurify
  * 
  * @param markdown - The markdown string to render
+ * @param repoUrl - Optional repository URL for resolving relative image paths
  * @returns Sanitized HTML string
  * 
  * Security: All HTML is sanitized with DOMPurify to prevent XSS attacks
  * Performance: marked is significantly faster than react-markdown
  */
-export function renderMarkdown(markdown: string): string {
+export function renderMarkdown(markdown: string, repoUrl?: string): string {
   if (!markdown || markdown.trim() === '') {
     return '<p class="text-zinc-500">No content available</p>';
   }
@@ -68,8 +92,30 @@ export function renderMarkdown(markdown: string): string {
     // First decode any HTML entities in the source markdown
     const decodedMarkdown = decodeHTMLEntities(markdown);
     
-    // Parse markdown to HTML using marked
-    const rawHtml = marked.parse(decodedMarkdown, { async: false }) as string;
+    // Configure marked options
+    const options: any = {
+      gfm: true,
+      breaks: true,
+      pedantic: false,
+    };
+
+    // Use walkTokens to modify image tokens before rendering
+    if (repoUrl) {
+      options.walkTokens = (token: any) => {
+        if (token.type === 'image') {
+          // If the href is relative, resolve it to GitHub raw URL
+          if (token.href && !token.href.startsWith('http://') && !token.href.startsWith('https://')) {
+            token.href = resolveImageUrl(token.href, repoUrl);
+          }
+        }
+      };
+    }
+    
+    // Parse markdown to HTML using marked with options
+    // Note: We use marked.use() to apply options, then parse
+    // This is the recommended approach for marked v17+
+    marked.use(options);
+    const rawHtml = marked.parse(decodedMarkdown) as string;
     
     // Get DOMPurify instance (client-side only)
     const DOMPurify = getDOMPurify();

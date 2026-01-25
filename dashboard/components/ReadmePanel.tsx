@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Repository } from '@/lib/db'
 import { renderMarkdown } from '@/lib/markdown'
@@ -11,11 +11,47 @@ interface ReadmePanelProps {
 }
 
 export default function ReadmePanel({ repo, onClose }: ReadmePanelProps) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  
   // Render full markdown content (not truncated)
   const renderedReadme = useMemo(() => {
     const content = repo.readme_content || ''
-    return renderMarkdown(content)
-  }, [repo.readme_content])
+    return renderMarkdown(content, repo.repo_url)
+  }, [repo.readme_content, repo.repo_url])
+
+  // Handle image loading errors - fallback to master branch
+  useEffect(() => {
+    if (!contentRef.current) return
+
+    const images = contentRef.current.querySelectorAll('img')
+    
+    const handleImageError = (event: Event) => {
+      const img = event.target as HTMLImageElement
+      const src = img.src
+      
+      // Only try once - if it's already tried master, don't retry
+      if (src.includes('/master/') || img.dataset.retried === 'true') {
+        return
+      }
+      
+      // Try replacing /main/ with /master/
+      if (src.includes('/main/')) {
+        img.dataset.retried = 'true'
+        img.src = src.replace('/main/', '/master/')
+      }
+    }
+
+    images.forEach((img) => {
+      img.addEventListener('error', handleImageError)
+    })
+
+    // Cleanup
+    return () => {
+      images.forEach((img) => {
+        img.removeEventListener('error', handleImageError)
+      })
+    }
+  }, [renderedReadme])
 
   return (
     <AnimatePresence>
@@ -76,7 +112,7 @@ export default function ReadmePanel({ repo, onClose }: ReadmePanelProps) {
             </div>
 
             {/* README Content - Full Width */}
-            <div className="readme-panel-body">
+            <div className="readme-panel-body" ref={contentRef}>
               {repo.readme_content ? (
                 <div 
                   className="prose prose-invert prose-sm sm:prose-base w-full"
