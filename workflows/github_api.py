@@ -132,6 +132,7 @@ class GitHubAPIClient:
 
         Returns:
             List of repository data dictionaries
+            Only includes repos with a valid (non-null, non-empty) language
         """
         query = f"language:{language}"
         if updated_since:
@@ -141,7 +142,18 @@ class GitHubAPIClient:
 
         url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page=50"
         result = await self._api_call(url)
-        return result.get('items', []) if result else []
+        
+        if not result:
+            return []
+        
+        # Filter out repos without a language (defensive check, though API should return matching language)
+        repos = [r for r in result.get('items', []) if r.get('language')]
+        
+        if len(repos) < len(result.get('items', [])):
+            filtered_count = len(result.get('items', [])) - len(repos)
+            logger.info(f"Filtered out {filtered_count} repos without language from search results")
+        
+        return repos
 
     async def get_repo_details(self, owner: str, repo: str) -> Dict:
         """
@@ -314,6 +326,7 @@ class GitHubAPIClient:
         
         Returns:
             List of repository data dictionaries ordered by stars descending
+            Only includes repos with a valid (non-null, non-empty) language
         """
         # Use code search API which properly supports path/filename matching
         query = f"filename:{filename}"
@@ -339,6 +352,11 @@ class GitHubAPIClient:
         for item in result.get('items', []):
             repo_data = item.get('repository', {})
             repo_full_name = repo_data.get('full_name')
+            repo_language = repo_data.get('language')
+            
+            # Only include repos with a valid language (non-null, non-empty)
+            if not repo_language:
+                continue
             
             # Only include each repo once, and check if file is in root
             if repo_full_name and repo_full_name not in seen_repos:
@@ -354,7 +372,7 @@ class GitHubAPIClient:
         # Sort by stars descending to prioritize quality
         repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
-        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory")
+        logger.info(f"Found {len(repos)} unique repos with {filename} in root directory (all with valid language)")
         
         return repos[:limit]
     

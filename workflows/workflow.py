@@ -7,6 +7,7 @@ from render_sdk.workflows import task, start
 import asyncio
 import asyncpg
 import os
+import sys
 import logging
 import traceback
 from datetime import datetime, timedelta, date, timezone
@@ -14,8 +15,7 @@ from typing import Dict, List
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from render_detection import store_render_enrichment
-from etl.extract import store_raw_repos, store_raw_metrics
+from etl.extract import store_raw_repos
 
 
 # Helper functions
@@ -151,7 +151,7 @@ async def fetch_language_repos(language: str) -> List[Dict]:
         sys.exit(1)
     
     try:
-        # Search GitHub API
+        # Search GitHub API (API now filters out repos without language)
         try:
             repos = await github_api.search_repositories(
                 language=language,
@@ -159,35 +159,42 @@ async def fetch_language_repos(language: str) -> List[Dict]:
                 updated_since=datetime.now(timezone.utc) - timedelta(days=30),
                 created_since=datetime.now(timezone.utc) - timedelta(days=180)
             )
-            logger.info(f"GitHub API returned {len(repos)} repos for {language} (updated in last 30d, created in last 180d)")
+            logger.info(f"GitHub API returned {len(repos)} repos for {language} (updated in last 30d, created in last 180d, all with valid language)")
         except Exception as e:
             logger.error(f"search_repositories failed for {language}: {type(e).__name__}: {e}")
             raise
 
-        # Apply DEV_MODE limits
-        repo_limit = DEV_REPO_LIMIT if DEV_MODE else 50
-        logger.info(f"Processing {repo_limit} repos (DEV_MODE={DEV_MODE})")
+        # Target: 25 repos per language (or DEV_REPO_LIMIT in dev mode)
+        target_count = DEV_REPO_LIMIT if DEV_MODE else 25
+        
+        # Take up to target_count repos
+        repos_to_process = repos[:target_count]
+        logger.info(f"Processing {len(repos_to_process)} repos for {language} (target={target_count}, DEV_MODE={DEV_MODE})")
+
+        if not repos_to_process:
+            logger.warning(f"No repos found for {language}")
+            return []
 
         # Fetch READMEs in parallel (much faster!)
         readme_contents = {}
         readme_tasks = []
-        for repo in repos[:repo_limit]:
+        for repo in repos_to_process:
             owner, name = repo.get('full_name', '/').split('/')
             readme_tasks.append(github_api.fetch_readme(owner, name))
         
         readme_results = await asyncio.gather(*readme_tasks, return_exceptions=True)
-        for i, repo in enumerate(repos[:repo_limit]):
+        for i, repo in enumerate(repos_to_process):
             if not isinstance(readme_results[i], Exception) and readme_results[i]:
                 readme_contents[repo.get('full_name')] = readme_results[i]
         
         logger.info(f"Fetched {len(readme_contents)} READMEs for {language}")
         
         # Store raw API responses with READMEs
-        await store_raw_repos(repos, db_pool, source_language=language, readme_contents=readme_contents)
+        await store_raw_repos(repos_to_process, db_pool, source_language=language, readme_contents=readme_contents)
 
         # Spawn batch analysis task (subtask initializes its own connections)
         # Pass README contents to avoid duplicate API calls
-        batch_results = await analyze_repo_batch(repos[:repo_limit], readme_contents)
+        batch_results = await analyze_repo_batch(repos_to_process, readme_contents)
         
         logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results)} results")
         return batch_results
@@ -276,6 +283,12 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         logger.warning(f"Skipping repo with invalid full_name: {repo_full_name}")
         return None
     
+    # Validate language exists (should have been filtered earlier, but double-check)
+    language = repo.get('language')
+    if not language:
+        logger.warning(f"Skipping repo {repo_full_name} without language (should have been filtered earlier)")
+        return None
+    
     owner, name = repo_full_name.split('/', 1)
 
     # Check if repo was already marked as using Render (from code search)
@@ -295,7 +308,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
     enriched = {
         'repo_full_name': repo.get('full_name'),
         'repo_url': repo.get('html_url'),
-        'language': repo.get('language'),
+        'language': language,
         'description': repo.get('description'),
         'readme_content': readme,
         'stars': repo.get('stargazers_count', 0),
@@ -313,7 +326,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         enriched['updated_at'] = datetime.fromisoformat(enriched['updated_at'].replace('Z', '+00:00'))
 
     # Store in staging layer
-    logger.info(f"Storing {enriched['repo_full_name']} to staging (uses_render={uses_render})")
+    logger.info(f"Storing {enriched['repo_full_name']} to staging (language={language}, uses_render={uses_render})")
     await store_in_staging(enriched, db_pool)
     
     logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
@@ -368,23 +381,29 @@ async def fetch_render_repos() -> List[Dict]:
     
     try:
         # Code search for render.yaml in root directory
-        # No date filter - get all repos with render.yaml sorted by stars
-        repos = await github_api.search_render_ecosystem(limit=50, created_since=None)
-        logger.info(f"Found {len(repos)} repos with render.yaml in root")
+        # API now filters out repos without language automatically
+        # Request 100 initially to ensure we get 25+ after filtering
+        repos = await github_api.search_render_ecosystem(limit=100, created_since=None)
+        logger.info(f"Found {len(repos)} repos with render.yaml in root (all with valid language)")
         
         if not repos:
             logger.warning("No Render repos found via code search")
             return []
         
+        # Target: 25 render repos
+        target_count = 25
+        repos_to_process = repos[:target_count]
+        logger.info(f"Processing {len(repos_to_process)} render repos (target={target_count})")
+        
         # Mark all as Render projects
-        for repo in repos:
+        for repo in repos_to_process:
             repo['uses_render'] = True
         
         # Store in raw layer
-        await store_raw_repos(repos, db_pool, source_language='render')
+        await store_raw_repos(repos_to_process, db_pool, source_language='render')
         
         # Analyze batch (stores in staging)
-        analyzed = await analyze_repo_batch(repos)
+        analyzed = await analyze_repo_batch(repos_to_process)
         
         logger.info(f"fetch_render_repos END: {len(analyzed)} analyzed")
         return analyzed
