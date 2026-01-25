@@ -323,6 +323,8 @@ class GitHubAPIClient:
             filename: Filename to search for (e.g., 'render.yaml')
             limit: Maximum number of results
             created_since: Only return repos created since this date (optional)
+                          NOTE: Date filtering is done client-side after fetching repo details
+                          because GitHub Code Search API doesn't support date filters.
             require_language: If True, filter out repos without language. If False, accept all repos.
             default_language: Default language to assign to repos without one (e.g., 'Unknown')
         
@@ -331,13 +333,14 @@ class GitHubAPIClient:
             All repos will have required fields: created_at, updated_at, description
         """
         # Use code search API which properly supports path/filename matching
+        # NOTE: GitHub Code Search API does NOT support date filters (created:, pushed:, etc.)
+        # We'll fetch more results and filter by date client-side
         query = f"filename:{filename}"
         
-        # Add date filter if provided
-        if created_since:
-            query += f" created:>={created_since.strftime('%Y-%m-%d')}"
+        # Request more results if date filtering is needed (since we'll filter client-side)
+        per_page = 100 if created_since else 100
         
-        url = f"{self.base_url}/search/code?q={query}&per_page=100"
+        url = f"{self.base_url}/search/code?q={query}&per_page={per_page}"
         
         logger.info(f"Searching for {filename} using code search API")
         
@@ -406,19 +409,43 @@ class GitHubAPIClient:
                     # Remove this repo from results since it lacks required fields
                     repos = [r for r in repos if r.get('full_name') != repo_full_name]
         
-        # Final validation: ensure all repos have required fields
+        # Final validation: ensure all repos have required fields and apply date filter
         validated_repos = []
+        filtered_by_date = 0
         for repo in repos:
-            if repo.get('created_at') and repo.get('updated_at'):
-                validated_repos.append(repo)
-            else:
+            if not (repo.get('created_at') and repo.get('updated_at')):
                 logger.warning(f"Dropping repo {repo.get('full_name')} - missing required timestamps")
+                continue
+            
+            # Apply client-side date filtering if created_since is specified
+            if created_since:
+                try:
+                    # Parse ISO format datetime from GitHub API
+                    created_at_str = repo.get('created_at', '')
+                    # Handle both 'Z' and '+00:00' timezone formats
+                    created_at_str = created_at_str.replace('Z', '+00:00')
+                    created_at = datetime.fromisoformat(created_at_str)
+                    
+                    # Filter out repos created before the threshold
+                    if created_at < created_since:
+                        filtered_by_date += 1
+                        continue
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Failed to parse created_at for {repo.get('full_name')}: {e}")
+                    # If we can't parse the date, skip this repo when date filtering is enabled
+                    continue
+            
+            validated_repos.append(repo)
         
         # Sort by stars descending to prioritize quality
         validated_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
+        # Log filtering statistics
         if repos_without_language > 0:
             logger.info(f"Filtered out {repos_without_language} repos without language")
+        
+        if filtered_by_date > 0:
+            logger.info(f"Filtered out {filtered_by_date} repos created before {created_since.strftime('%Y-%m-%d')}")
         
         logger.info(f"Found {len(validated_repos)} unique repos with {filename} in root directory")
         
