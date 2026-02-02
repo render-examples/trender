@@ -25,11 +25,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="min-h-screen bg-black relative">
+        <div className="min-h-screen bg-black relative flex flex-col">
           <Header />
 
           {/* Main Content */}
-          <main className="pt-20 sm:pt-24 md:pt-28 pb-8 sm:pb-10 md:pb-12 relative z-10">
+          <main className="pt-20 sm:pt-24 md:pt-28 pb-8 sm:pb-10 md:pb-12 relative z-10 flex-grow">
             {children}
           </main>
 
