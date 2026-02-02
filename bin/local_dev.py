@@ -145,38 +145,24 @@ def validate_environment():
     return True
 
 
-def wait_for_server(url: str, timeout: int = 30) -> bool:
+def wait_for_server(url: str, timeout: int = 3) -> bool:
     """
     Wait for the local task server to be ready
     
+    The Render EA tasks dev server doesn't expose a health endpoint,
+    so we just give it a brief grace period to initialize.
+    
     Args:
-        url: Server URL to check
-        timeout: Maximum seconds to wait
+        url: Server URL (for display purposes)
+        timeout: Seconds to wait before continuing
     
     Returns:
-        True if server is ready, False otherwise
+        Always returns True after timeout
     """
-    print_info(f"Waiting for task server at {url}...")
-    
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            # Try to connect to the server
-            response = requests.get(f"{url}/health", timeout=2)
-            if response.status_code == 200:
-                print_success(f"Task server is ready at {url}")
-                return True
-        except requests.exceptions.RequestException:
-            # Server not ready yet, keep waiting
-            pass
-        
-        time.sleep(1)
-        print(".", end="", flush=True)
-    
-    print()  # New line after dots
-    print_warning(f"Task server did not respond within {timeout}s")
-    print_info("The server may still be starting up. Check logs above for errors.")
-    return False
+    print_info(f"Giving task server {timeout}s to initialize...")
+    time.sleep(timeout)
+    print_success("Task server should be ready")
+    return True
 
 
 def start_task_server(port: int = 8120) -> subprocess.Popen:
@@ -338,9 +324,7 @@ def main():
             # Wait for server to be ready (unless --no-wait)
             if not args.no_wait:
                 server_url = os.getenv('RENDER_LOCAL_DEV_URL', f'http://localhost:{args.port}')
-                if not wait_for_server(server_url, timeout=30):
-                    print_warning("Continuing anyway...")
-                time.sleep(2)  # Extra grace period
+                wait_for_server(server_url, timeout=3)
         
         if args.server_only:
             # Server-only mode: just stream server logs
