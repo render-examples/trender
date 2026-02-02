@@ -639,6 +639,109 @@ If upgrading from an older version, apply the cleanup migration:
 psql $DATABASE_URL -f database/cleanup_workflow_tracking.sql
 ```
 
+## Data Retention
+
+Trender implements a **tiered data retention policy** to maintain predictable storage costs while preserving data needed for debugging and analytics.
+
+### Retention Windows
+
+| Layer | Retention Period | Purpose |
+|-------|-----------------|---------|
+| **Raw Layer** | 7 days | Debugging and reprocessing capability |
+| **Staging Layer** | 7 days | ETL audit trail for data quality issues |
+| **Analytics Layer** | 30 days | Trending analysis and dashboard history |
+
+### How It Works
+
+**Automatic Cleanup**: The retention cleanup runs automatically after each successful workflow execution. Old data is deleted according to the retention windows above.
+
+**What Gets Cleaned Up**:
+- `raw_github_repos` and `raw_repo_metrics`: Data older than 7 days
+- `stg_repos_validated` and `stg_render_enrichment`: Data older than 7 days
+- `fact_repo_snapshots` and `fact_render_usage`: Snapshots older than 30 days
+- `dim_repositories`: Historical versions (SCD Type 2) older than 30 days
+
+### Storage Impact
+
+With the retention policy in place:
+- **Steady-state storage**: ~3,000 repository snapshots (30 days × ~100 repos/day)
+- **No unbounded growth**: Data automatically ages out
+- **Sufficient for trends**: 1 month of historical data for dashboard
+
+Without retention (for comparison):
+- **30 days**: ~3,000 snapshots
+- **90 days**: ~9,000 snapshots
+- **1 year**: ~36,500 snapshots (12x more!)
+
+### Manual Cleanup
+
+If you need to run cleanup manually (e.g., for testing or maintenance):
+
+```bash
+# Using the standalone script (recommended)
+./bin/cleanup_data.sh
+
+# Or directly with psql
+psql $DATABASE_URL -f database/data_retention_cleanup.sql
+```
+
+The cleanup script:
+- Uses transactions for atomicity (all-or-nothing)
+- Reports row counts and date ranges for each table
+- Is safe to run multiple times (idempotent)
+- Won't fail the workflow if errors occur
+
+### Monitoring Retention
+
+To check the age of your data:
+
+```bash
+# Check oldest and newest records in each layer
+psql $DATABASE_URL -c "
+SELECT 
+  'raw_github_repos' as table_name,
+  COUNT(*) as rows,
+  MIN(fetch_timestamp) as oldest,
+  MAX(fetch_timestamp) as newest
+FROM raw_github_repos
+UNION ALL
+SELECT 
+  'fact_repo_snapshots',
+  COUNT(*),
+  MIN(snapshot_date)::timestamptz,
+  MAX(snapshot_date)::timestamptz
+FROM fact_repo_snapshots;
+"
+```
+
+### Adjusting Retention Windows
+
+To modify retention periods, edit [`database/data_retention_cleanup.sql`](database/data_retention_cleanup.sql):
+
+```sql
+-- Change from 7 days to 14 days for raw layer
+DELETE FROM raw_github_repos
+WHERE fetch_timestamp < NOW() - INTERVAL '14 days';  -- was 7 days
+
+-- Change from 30 days to 60 days for analytics
+DELETE FROM fact_repo_snapshots
+WHERE snapshot_date < CURRENT_DATE - INTERVAL '60 days';  -- was 30 days
+```
+
+### Troubleshooting
+
+**Q: My dashboard only shows recent data**  
+A: This is expected! The 30-day retention means the dashboard displays the last month of trending data, which aligns with platforms like GitHub Trending.
+
+**Q: Can I temporarily disable cleanup?**  
+A: Yes, comment out the cleanup call in `workflows/workflow.py` in the `aggregate_results()` function. Remember to re-enable it to prevent storage growth.
+
+**Q: How do I recover deleted data?**  
+A: Deleted data cannot be recovered. The raw layer is kept for 7 days specifically to allow reprocessing if needed before permanent deletion.
+
+**Q: Cleanup failed - what should I do?**  
+A: Check the workflow logs for errors. The cleanup is designed to fail gracefully without breaking the workflow. You can manually run the cleanup script once the issue is resolved.
+
 ## Success Metrics
 
 **Technical:**

@@ -423,6 +423,66 @@ async def fetch_render_repos() -> List[Dict]:
         await cleanup_connections(github_api, db_pool)
 
 
+async def cleanup_old_data(db_pool: asyncpg.Pool) -> Dict[str, int]:
+    """
+    Execute tiered data retention cleanup.
+    
+    Retention policy:
+    - Raw layer: 7 days (debugging and reprocessing)
+    - Staging layer: 7 days (ETL audit trail)
+    - Analytics layer: 30 days (trending analysis)
+    
+    Args:
+        db_pool: Database connection pool
+        
+    Returns:
+        Dictionary with cleanup statistics per table
+    """
+    logger.info("Starting data retention cleanup...")
+    
+    # Read SQL cleanup script
+    script_path = os.path.join(os.path.dirname(__file__), '..', 'database', 'data_retention_cleanup.sql')
+    
+    try:
+        with open(script_path, 'r') as f:
+            cleanup_sql = f.read()
+    except FileNotFoundError:
+        logger.error(f"Cleanup script not found at {script_path}")
+        return {'error': 'Script not found'}
+    
+    cleanup_stats = {}
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # Execute cleanup script
+            # Note: The script uses a transaction, so it's atomic
+            results = await conn.fetch(cleanup_sql)
+            
+            # Parse results - the script returns row counts
+            for row in results:
+                if 'table_name' in row.keys():
+                    table = row['table_name']
+                    count = row['row_count']
+                    cleanup_stats[table] = count
+                    
+                    oldest = row.get('oldest_record')
+                    newest = row.get('newest_record')
+                    
+                    if oldest and newest:
+                        logger.info(f"  {table}: {count} rows remaining (oldest: {oldest}, newest: {newest})")
+                    else:
+                        logger.info(f"  {table}: {count} rows remaining")
+        
+        logger.info("Data retention cleanup completed successfully")
+        return cleanup_stats
+        
+    except Exception as e:
+        logger.error(f"Error during data retention cleanup: {type(e).__name__}: {str(e)}")
+        logger.error(f"Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        # Return error but don't fail the workflow
+        return {'error': str(e)}
+
+
 async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
                             execution_start: datetime) -> Dict:
     """
@@ -532,9 +592,14 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
         # Load to analytics (consolidated logic)
         await load_to_analytics_simple(repos, conn)
         
+        # Run data retention cleanup after successful ETL
+        logger.info("ETL completed successfully, running data retention cleanup...")
+        cleanup_stats = await cleanup_old_data(db_pool)
+        
         return {
             'repos_processed': len(repos),
             'execution_time': (datetime.now(timezone.utc) - execution_start).total_seconds(),
+            'cleanup_stats': cleanup_stats,
             'success': True
         }
 
