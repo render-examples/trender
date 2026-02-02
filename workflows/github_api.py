@@ -13,6 +13,9 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Constants
+RENDER_REPOS_PER_PAGE = 2000  # Number of results to fetch when searching for render.yaml
+
 
 class GitHubAPIClient:
     """Async GitHub API client with token authentication.
@@ -51,6 +54,58 @@ class GitHubAPIClient:
         if self.session:
             await self.session.close()
 
+    async def _handle_response_status(self, response: aiohttp.ClientResponse, url: str, 
+                                      attempt: int, retry_count: int) -> tuple[bool, Optional[dict]]:
+        """
+        Handle HTTP response status codes and errors.
+        
+        Args:
+            response: The aiohttp response object
+            url: The URL that was called
+            attempt: Current retry attempt number
+            retry_count: Total number of retries allowed
+        
+        Returns:
+            Tuple of (should_retry, result)
+            - should_retry: True if the request should be retried
+            - result: The parsed JSON result if successful, None otherwise
+        """
+        match response.status:
+            case 404:
+                return (False, None)
+            
+            case 403:
+                error_msg = await response.text()
+                if 'rate limit' in error_msg.lower():
+                    logger.error("GitHub rate limit exceeded")
+                    return (False, None)
+                elif 'insufficient' in error_msg.lower():
+                    logger.error("GitHub token has insufficient scopes")
+                    return (False, None)
+                raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
+            
+            case 422:
+                logger.error(f"GitHub API invalid query: {url}")
+                return (False, None)
+            
+            case 503:
+                logger.warning("GitHub API temporarily unavailable (503)")
+                if attempt < retry_count - 1:
+                    await asyncio.sleep(5)
+                    return (True, None)  # Retry
+                return (False, None)
+            
+            case _:
+                response.raise_for_status()
+        
+        # If we get here, response was successful
+        try:
+            result = await response.json()
+            return (False, result)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse GitHub API JSON response")
+            return (False, None)
+
     async def _api_call(self, url: str, retry_count: int = 3) -> dict:
         """
         Make API call with rate limiting and retry logic.
@@ -73,36 +128,13 @@ class GitHubAPIClient:
                     self.rate_limit_remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
                     self.rate_limit_reset = int(response.headers.get('X-RateLimit-Reset', 0))
                     
-                    # Handle specific status codes using match-case
-                    match response.status:
-                        case 404:
-                            return None
-                        case 403:
-                            error_msg = await response.text()
-                            if 'rate limit' in error_msg.lower():
-                                logger.error("GitHub rate limit exceeded")
-                                return None
-                            elif 'insufficient' in error_msg.lower():
-                                logger.error("GitHub token has insufficient scopes")
-                                return None
-                            raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
-                        case 422:
-                            logger.error(f"GitHub API invalid query: {url}")
-                            return None
-                        case 503:
-                            logger.warning("GitHub API temporarily unavailable (503)")
-                            if attempt < retry_count - 1:
-                                await asyncio.sleep(5)
-                                continue
-                            return None
-                        case _:
-                            response.raise_for_status()
+                    # Handle response status and errors
+                    should_retry, result = await self._handle_response_status(response, url, attempt, retry_count)
                     
-                    try:
-                        return await response.json()
-                    except json.JSONDecodeError:
-                        logger.error("Failed to parse GitHub API JSON response")
-                        return None
+                    if should_retry:
+                        continue  # Retry the request
+                    
+                    return result
                         
             except asyncio.TimeoutError:
                 logger.warning(f"GitHub API timeout (attempt {attempt + 1}/{retry_count})")
@@ -235,6 +267,127 @@ class GitHubAPIClient:
             logger.debug(f"Failed to fetch README for {owner}/{repo}: {e}")
             return None
 
+    def _should_include_repo(self, repo_language: Optional[str], require_language: bool) -> bool:
+        """Check if a repo should be included based on language requirements."""
+        if repo_language:
+            return True
+        return not require_language
+    
+    def _is_file_in_root(self, file_path: str, filename: str) -> bool:
+        """Check if file is in root directory (no subdirectories)."""
+        return file_path == filename
+    
+    def _parse_created_date(self, repo: Dict) -> Optional[datetime]:
+        """Parse created_at date from repo data."""
+        try:
+            created_at_str = repo.get('created_at', '')
+            # Handle both 'Z' and '+00:00' timezone formats
+            created_at_str = created_at_str.replace('Z', '+00:00')
+            return datetime.fromisoformat(created_at_str)
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Failed to parse created_at for {repo.get('full_name')}: {e}")
+            return None
+    
+    def _is_repo_valid(self, repo: Dict, created_since: Optional[datetime]) -> bool:
+        """Validate repo has required fields and meets date filter."""
+        # Check required fields
+        if not (repo.get('created_at') and repo.get('updated_at')):
+            logger.warning(f"Dropping repo {repo.get('full_name')} - missing required timestamps")
+            return False
+        
+        # Check date filter if specified
+        if created_since:
+            created_at = self._parse_created_date(repo)
+            if not created_at or created_at < created_since:
+                return False
+        
+        return True
+    
+    async def _fetch_missing_repo_details(self, repos: List[Dict], repos_needing_details: List[str], 
+                                         default_language: Optional[str]) -> List[Dict]:
+        """Fetch full details for repos missing required fields using batched async calls."""
+        if not repos_needing_details:
+            return repos
+        
+        logger.info(f"Fetching full details for {len(repos_needing_details)} repos with missing fields (batched)")
+        
+        # Create a mapping for quick lookup
+        repos_by_name = {repo.get('full_name'): repo for repo in repos}
+        
+        # Prepare all API calls to run in parallel
+        async def fetch_one_repo(repo_full_name: str) -> tuple[str, Optional[Dict]]:
+            """Fetch a single repo's details, returning (repo_name, details)."""
+            try:
+                owner, name = repo_full_name.split('/', 1)
+                full_details = await self.get_repo_details(owner, name)
+                return (repo_full_name, full_details)
+            except Exception as e:
+                logger.warning(f"Failed to fetch details for {repo_full_name}: {e}")
+                return (repo_full_name, None)
+        
+        # Batch all API calls concurrently using asyncio.gather
+        fetch_tasks = [fetch_one_repo(repo_name) for repo_name in repos_needing_details]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=False)
+        
+        # Process results
+        for repo_full_name, full_details in results:
+            if full_details:
+                # Preserve default language assignment if it was set
+                original_repo = repos_by_name.get(repo_full_name, {})
+                preserved_language = original_repo.get('language')
+                
+                if default_language and preserved_language == default_language:
+                    full_details['language'] = default_language
+                
+                repos_by_name[repo_full_name] = full_details
+            else:
+                # Remove repos that failed to fetch
+                repos_by_name.pop(repo_full_name, None)
+        
+        return list(repos_by_name.values())
+    
+    def _extract_unique_repos(self, items: List[Dict], filename: str, limit: int,
+                             require_language: bool, default_language: Optional[str]) -> tuple[List[Dict], List[str], int]:
+        """Extract unique repositories from code search results."""
+        seen_repos = set()
+        repos = []
+        repos_needing_details = []
+        repos_without_language = 0
+        
+        for item in items:
+            repo_data = item.get('repository', {})
+            repo_full_name = repo_data.get('full_name')
+            repo_language = repo_data.get('language')
+            
+            # Skip if already seen
+            if not repo_full_name or repo_full_name in seen_repos:
+                continue
+            
+            # Skip if not in root directory
+            if not self._is_file_in_root(item.get('path', ''), filename):
+                continue
+            
+            # Handle language requirements
+            if not repo_language:
+                if require_language:
+                    repos_without_language += 1
+                    continue
+                elif default_language:
+                    repo_data['language'] = default_language
+            
+            # Add to results
+            seen_repos.add(repo_full_name)
+            repos.append(repo_data)
+            
+            # Track repos needing full details
+            if not repo_data.get('created_at') or not repo_data.get('updated_at'):
+                repos_needing_details.append(repo_full_name)
+            
+            if len(repos) >= limit:
+                break
+        
+        return repos, repos_needing_details, repos_without_language
+    
     async def search_repos_by_path(self, filename: str, limit: int = 50, created_since: datetime = None, 
                                    require_language: bool = True, default_language: str = None) -> List[Dict]:
         """
@@ -254,119 +407,37 @@ class GitHubAPIClient:
             List of repository data dictionaries ordered by stars descending
             All repos will have required fields: created_at, updated_at, description
         """
-        # Use code search API which properly supports path/filename matching
-        # NOTE: GitHub Code Search API does NOT support date filters (created:, pushed:, etc.)
-        # We'll fetch more results and filter by date client-side
+        # Build and execute search query
         query = f"filename:{filename}"
-        
-        # Request more results if date filtering is needed (since we'll filter client-side)
-        per_page = 100 if created_since else 100
-        
-        url = f"{self.base_url}/search/code?q={query}&per_page={per_page}"
+        url = f"{self.base_url}/search/code?q={query}&per_page={RENDER_REPOS_PER_PAGE}"
         
         logger.info(f"Searching for {filename} using code search API")
-        
         result = await self._api_call(url)
         
         if not result or 'items' not in result:
             logger.warning(f"Code search returned no results for {filename}")
             return []
         
-        # Extract unique repositories from code search results
-        seen_repos = set()
-        repos = []
-        repos_without_language = 0
-        repos_needing_details = []
-        
-        for item in result.get('items', []):
-            repo_data = item.get('repository', {})
-            repo_full_name = repo_data.get('full_name')
-            repo_language = repo_data.get('language')
-            
-            # Handle repos without language
-            if not repo_language:
-                if require_language:
-                    repos_without_language += 1
-                    continue
-                elif default_language:
-                    # Assign default language
-                    repo_data['language'] = default_language
-            
-            # Only include each repo once, and check if file is in root
-            if repo_full_name and repo_full_name not in seen_repos:
-                # Check if the file path is in root (no subdirectories)
-                file_path = item.get('path', '')
-                if file_path == filename:  # Exact match, no path prefix
-                    seen_repos.add(repo_full_name)
-                    
-                    # Code search results don't include created_at, updated_at - need to fetch full details
-                    if not repo_data.get('created_at') or not repo_data.get('updated_at'):
-                        repos_needing_details.append(repo_full_name)
-                    
-                    repos.append(repo_data)
-                    
-                    if len(repos) >= limit:
-                        break
+        # Extract unique repositories from search results
+        repos, repos_needing_details, repos_without_language = self._extract_unique_repos(
+            result.get('items', []), filename, limit, require_language, default_language
+        )
         
         # Fetch full details for repos missing required fields
-        if repos_needing_details:
-            logger.info(f"Fetching full details for {len(repos_needing_details)} repos with missing fields")
-            for repo_full_name in repos_needing_details:
-                try:
-                    owner, name = repo_full_name.split('/', 1)
-                    full_details = await self.get_repo_details(owner, name)
-                    
-                    if full_details:
-                        # Update the repo in our list with full details
-                        for i, repo in enumerate(repos):
-                            if repo.get('full_name') == repo_full_name:
-                                # Preserve the language assignment (e.g., 'render')
-                                preserved_language = repo.get('language')
-                                repos[i] = full_details
-                                if default_language and preserved_language == default_language:
-                                    repos[i]['language'] = default_language
-                                break
-                except Exception as e:
-                    logger.warning(f"Failed to fetch details for {repo_full_name}: {e}")
-                    # Remove this repo from results since it lacks required fields
-                    repos = [r for r in repos if r.get('full_name') != repo_full_name]
+        repos = await self._fetch_missing_repo_details(repos, repos_needing_details, default_language)
         
-        # Final validation: ensure all repos have required fields and apply date filter
-        validated_repos = []
-        filtered_by_date = 0
-        for repo in repos:
-            if not (repo.get('created_at') and repo.get('updated_at')):
-                logger.warning(f"Dropping repo {repo.get('full_name')} - missing required timestamps")
-                continue
-            
-            # Apply client-side date filtering if created_since is specified
-            if created_since:
-                try:
-                    # Parse ISO format datetime from GitHub API
-                    created_at_str = repo.get('created_at', '')
-                    # Handle both 'Z' and '+00:00' timezone formats
-                    created_at_str = created_at_str.replace('Z', '+00:00')
-                    created_at = datetime.fromisoformat(created_at_str)
-                    
-                    # Filter out repos created before the threshold
-                    if created_at < created_since:
-                        filtered_by_date += 1
-                        continue
-                except (ValueError, AttributeError) as e:
-                    logger.warning(f"Failed to parse created_at for {repo.get('full_name')}: {e}")
-                    # If we can't parse the date, skip this repo when date filtering is enabled
-                    continue
-            
-            validated_repos.append(repo)
+        # Validate and filter repos
+        validated_repos = [repo for repo in repos if self._is_repo_valid(repo, created_since)]
         
-        # Sort by stars descending to prioritize quality
+        # Sort by stars descending
         validated_repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
         
-        # Log filtering statistics
+        # Log statistics
         if repos_without_language > 0:
             logger.info(f"Filtered out {repos_without_language} repos without language")
         
-        if filtered_by_date > 0:
+        filtered_by_date = len(repos) - len(validated_repos)
+        if filtered_by_date > 0 and created_since:
             logger.info(f"Filtered out {filtered_by_date} repos created before {created_since.strftime('%Y-%m-%d')}")
         
         logger.info(f"Found {len(validated_repos)} unique repos with {filename} in root directory")
