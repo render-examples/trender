@@ -107,7 +107,7 @@ export default function WorkflowPanel() {
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="border border-zinc-700 px-6 py-6 space-y-6">
+            <div className="border border-zinc-700 px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
           {/* Why Workflows Section */}
           <div className="space-y-3">
             <h3 className="text-lg font-semibold text-white">{workflowPanelContent.title}</h3>
@@ -140,7 +140,7 @@ export default function WorkflowPanel() {
               </div>
 
               {/* Run Metadata */}
-              <div className="flex items-center gap-6 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 text-sm">
                 <div>
                   <span className="text-zinc-400">Latest run:</span>{' '}
                   <span className="text-zinc-200">{formatDate(workflowRun.completed_at)}</span>
@@ -171,10 +171,10 @@ export default function WorkflowPanel() {
 
               {/* Timeline Visualization */}
               <div>
-                <h4 className="text-sm font-semibold text-zinc-200 mb-3 uppercase tracking-wider">
+                <h4 className="text-xs sm:text-sm font-semibold text-zinc-200 mb-2 sm:mb-3 uppercase tracking-wider">
                   Execution Timeline
                 </h4>
-                <div className="bg-zinc-900 border border-zinc-800 p-4">
+                <div className="bg-zinc-900 border border-zinc-800 p-2 sm:p-4">
                   <TaskTimeline
                     task={workflowRun.task_tree}
                     workflowStart={new Date(workflowRun.task_tree.started_at)}

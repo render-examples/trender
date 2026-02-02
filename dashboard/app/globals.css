@@ -522,3 +522,33 @@ body::after {
   }
 }
 
+/* Timeline Mobile Optimizations */
+@media (max-width: 640px) {
+  /* Ensure timeline bars have minimum visible width */
+  .timeline-bar-mobile {
+    min-width: 4px;
+  }
+  
+  /* Reduce font sizes for better fit */
+  .timeline-text-mobile {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+  
+  /* Optimize spacing for mobile timeline */
+  .timeline-container-mobile {
+    padding: 0.5rem;
+  }
+  
+  /* Better touch targets on mobile */
+  .workflow-panel-button {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Ensure smooth transitions on all screen sizes */
+.timeline-transition {
+  transition: all 0.3s ease-in-out;
+}
+

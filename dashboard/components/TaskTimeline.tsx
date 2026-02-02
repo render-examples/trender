@@ -63,11 +63,12 @@ export function TaskTimeline({ task, workflowStart, totalDuration }: TaskTimelin
     
     return (
       <div key={`${task.name}-${task.language || 'main'}`} className="mb-2">
-        <div className="flex items-center gap-1.5">
+        {/* Desktop/Tablet: Horizontal Layout */}
+        <div className="hidden sm:flex items-center gap-1.5">
           {/* Task Name - Left */}
           <span 
-            className="text-xs text-zinc-200 font-mono flex-shrink-0 whitespace-nowrap"
-            style={{ paddingLeft: `${depth * 16}px`, minWidth: '300px', maxWidth: '300px' }}
+            className="text-xs text-zinc-200 font-mono flex-shrink-0 whitespace-nowrap overflow-hidden text-ellipsis sm:min-w-[180px] sm:max-w-[180px] md:min-w-[300px] md:max-w-[300px]"
+            style={{ paddingLeft: `${depth * 16}px` }}
             title={label}
           >
             {label}
@@ -88,6 +89,39 @@ export function TaskTimeline({ task, workflowStart, totalDuration }: TaskTimelin
             />
           </div>
         </div>
+
+        {/* Mobile: Stacked Layout */}
+        <div className="sm:hidden">
+          {/* Task Name + Duration Row */}
+          <div 
+            className="flex items-center justify-between gap-2 mb-1"
+            style={{ paddingLeft: `${depth * 8}px` }}
+          >
+            <span 
+              className="text-[10px] text-zinc-200 font-mono flex-1 truncate"
+              title={label}
+            >
+              {label}
+            </span>
+            <span className="text-[10px] text-zinc-400 flex-shrink-0">
+              {barPosition.duration}
+            </span>
+          </div>
+          
+          {/* Timeline Bar Row */}
+          <div 
+            className="relative h-5 bg-zinc-800 border border-zinc-700 overflow-hidden"
+            style={{ marginLeft: `${depth * 8}px` }}
+          >
+            <motion.div
+              className={`absolute top-0 h-full ${color}`}
+              initial={{ width: 0, left: barPosition.left }}
+              animate={{ width: barPosition.width, left: barPosition.left }}
+              transition={{ duration: 1.5, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+
         {task.children && task.children.length > 0 && (
           <div className="mt-1">
             {task.children.map((child) => renderTaskBar(child, depth + 1))}

@@ -1,4 +1,4 @@
-# Bin Scripts
+# Bin scripts
 
 Utility scripts for managing the Trender application.
 
@@ -6,7 +6,7 @@ Utility scripts for managing the Trender application.
 
 Orchestrator script for local workflow development and testing.
 
-### Quick Start
+### Quick start
 
 ```bash
 # Install dependencies first (if not already done)
@@ -21,7 +21,7 @@ pip install -r requirements.txt -r workflows/requirements.txt -r trigger/require
 python bin/local_dev.py
 ```
 
-### What It Does
+### What it does
 
 1. ✅ Validates your `.env` configuration
 2. ✅ Starts local task server on port 8120
@@ -30,7 +30,7 @@ python bin/local_dev.py
 5. ✅ Streams logs from both processes
 6. ✅ Graceful cleanup on Ctrl+C
 
-### Usage Examples
+### Usage examples
 
 ```bash
 # Default: Full workflow (server + trigger)
@@ -61,7 +61,7 @@ python bin/local_dev.py --no-wait
   - `RENDER_USE_LOCAL_DEV=true`
   - `RENDER_LOCAL_DEV_URL=http://localhost:8120`
 
-### Environment Variables
+### Environment variables
 
 The script automatically loads variables from `.env` in the project root. See `env.example` for all configuration options.
 
@@ -77,7 +77,7 @@ DEV_MODE=true
 DEV_REPO_LIMIT=5
 ```
 
-### Colored Output
+### Colored output
 
 The script uses ANSI colors to distinguish between different log sources:
 
