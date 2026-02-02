@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Constants
-RENDER_REPOS_PER_PAGE = 2000  # Number of results to fetch when searching for render.yaml
+RENDER_REPOS_PER_PAGE = 200  # Number of results to fetch when searching for render.yaml
 
 
 class GitHubAPIClient:
@@ -454,6 +454,9 @@ class GitHubAPIClient:
         language for ALL repos found via render.yaml search, regardless of GitHub's detection.
         This allows us to identify Render projects by language='render' instead of a separate flag.
         
+        Hardcoded repos: To ensure we always have high-quality examples, we hardcode several
+        prominent Render repositories that may not have render.yaml in their root.
+        
         Args:
             limit: Maximum number of results to return
             created_since: Only return repos created since this date (optional)
@@ -466,6 +469,16 @@ class GitHubAPIClient:
         if created_since:
             logger.info(f"Filtering for repos created since {created_since.strftime('%Y-%m-%d')}")
         
+        # Hardcoded prominent Render repositories
+        hardcoded_repos = [
+            'Flagsmith/flagsmith',
+            'run-llama/sec-insights',
+            'postalsys/emailengine',
+            'spree/spree_starter',
+            'ryanwi/rails7-on-docker',
+            'frolic/ethfs',
+        ]
+        
         try:
             # Code search for render.yaml in root
             # Don't require language, assign "render" (lowercase) as default for ALL repos
@@ -477,7 +490,50 @@ class GitHubAPIClient:
                 default_language='render'  # Assign "render" (lowercase) as language
             )
             logger.info(f"Found {len(repos)} repos via code search (all assigned language='render')")
-            return repos
+            
+            # Fetch hardcoded repos in parallel
+            logger.info(f"Fetching {len(hardcoded_repos)} hardcoded Render showcase repos")
+            hardcoded_fetch_tasks = []
+            for repo_full_name in hardcoded_repos:
+                try:
+                    owner, name = repo_full_name.split('/', 1)
+                    hardcoded_fetch_tasks.append(self.get_repo_details(owner, name))
+                except ValueError:
+                    logger.warning(f"Invalid hardcoded repo format: {repo_full_name}")
+                    continue
+            
+            # Fetch all hardcoded repos concurrently
+            hardcoded_results = await asyncio.gather(*hardcoded_fetch_tasks, return_exceptions=True)
+            
+            # Process hardcoded repos
+            hardcoded_valid = []
+            for i, result in enumerate(hardcoded_results):
+                if isinstance(result, Exception):
+                    logger.warning(f"Failed to fetch hardcoded repo {hardcoded_repos[i]}: {result}")
+                    continue
+                if result and isinstance(result, dict):
+                    # Assign 'render' language and validate (without date filter for hardcoded repos)
+                    result['language'] = 'render'
+                    # Validate required fields but skip date filter for hardcoded showcase repos
+                    if self._is_repo_valid(result, created_since=None):
+                        hardcoded_valid.append(result)
+                        logger.info(f"Added hardcoded repo: {result.get('full_name')} ({result.get('stargazers_count', 0)} stars)")
+                    else:
+                        logger.warning(f"Hardcoded repo {hardcoded_repos[i]} failed validation: {result.get('full_name')}")
+            
+            # Merge hardcoded repos with search results, avoiding duplicates
+            seen_repos = {repo.get('full_name') for repo in repos if repo.get('full_name')}
+            for hardcoded_repo in hardcoded_valid:
+                if hardcoded_repo.get('full_name') not in seen_repos:
+                    repos.append(hardcoded_repo)
+                    seen_repos.add(hardcoded_repo.get('full_name'))
+            
+            # Sort all repos by stars descending
+            repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
+            
+            logger.info(f"Total repos after merging: {len(repos)} (including {len(hardcoded_valid)} hardcoded)")
+            
+            return repos[:limit]
         except Exception as e:
             logger.warning(f"Code search failed: {e}")
             return []
