@@ -4,9 +4,9 @@ import { useRef, useEffect, useState } from 'react'
 import Image from 'next/image'
 import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
-import RepoCard from './RepoCard'
-import LoadingSkeleton from './LoadingSkeleton'
-import ReadmePanel from './ReadmePanel'
+import RepoCard from '@/components/RepoCard'
+import LoadingSkeleton from '@/components/LoadingSkeleton'
+import ReadmePanel from '@/components/ReadmePanel'
 
 interface ScrollableRowProps {
   title: string

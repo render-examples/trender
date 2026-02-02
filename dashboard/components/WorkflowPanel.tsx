@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { TaskTimeline } from './TaskTimeline'
+import { TaskTimeline } from '@/components/TaskTimeline'
 import { workflowPanelContent } from '@/lib/content'
 
 interface Task {
@@ -113,14 +113,8 @@ export default function WorkflowPanel() {
             <h3 className="text-lg font-semibold text-white">{workflowPanelContent.title}</h3>
             <div className="space-y-3">
               {workflowPanelContent.paragraphs.map((paragraph, index) => (
-                <p key={index} className="text-sm text-zinc-400 leading-relaxed">
-                  {paragraph.split('**').map((part, i) => {
-                    // Bold every other part (the text between ** markers)
-                    if (i % 2 === 1) {
-                      return <strong key={i} className="text-zinc-300">{part}</strong>
-                    }
-                    return part
-                  })}
+                <p key={index} className="text-sm text-zinc-200 leading-relaxed">
+                  {paragraph}
                 </p>
               ))}
             </div>
@@ -140,7 +134,7 @@ export default function WorkflowPanel() {
               {/* Workflows in Action Section */}
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold text-white">Workflows in action</h3>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-200">
                   Stats from the latest workflow runs powering Trender.
                 </p>
               </div>
@@ -148,21 +142,21 @@ export default function WorkflowPanel() {
               {/* Run Metadata */}
               <div className="flex items-center gap-6 text-sm">
                 <div>
-                  <span className="text-zinc-500">Latest run:</span>{' '}
-                  <span className="text-zinc-300">{formatDate(workflowRun.completed_at)}</span>
+                  <span className="text-zinc-400">Latest run:</span>{' '}
+                  <span className="text-zinc-200">{formatDate(workflowRun.completed_at)}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Duration:</span>{' '}
-                  <span className="text-zinc-300">
+                  <span className="text-zinc-400">Duration:</span>{' '}
+                  <span className="text-zinc-200">
                     {formatDuration(workflowRun.execution_time_seconds)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Repos processed:</span>{' '}
-                  <span className="text-zinc-300">{workflowRun.repos_processed}</span>
+                  <span className="text-zinc-400">Repos processed:</span>{' '}
+                  <span className="text-zinc-200">{workflowRun.repos_processed}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Status:</span>{' '}
+                  <span className="text-zinc-400">Status:</span>{' '}
                   <span className={
                     workflowRun.status === 'completed' 
                       ? 'text-green-500' 
@@ -177,7 +171,7 @@ export default function WorkflowPanel() {
 
               {/* Timeline Visualization */}
               <div>
-                <h4 className="text-sm font-semibold text-zinc-400 mb-3 uppercase tracking-wider">
+                <h4 className="text-sm font-semibold text-zinc-200 mb-3 uppercase tracking-wider">
                   Execution Timeline
                 </h4>
                 <div className="bg-zinc-900 border border-zinc-800 p-4">

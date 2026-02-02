@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Repository } from '@/lib/db'
-import ScrollableRow from './ScrollableRow'
+import ScrollableRow from '@/components/ScrollableRow'
 
 interface HomeClientProps {
   renderRepos: Repository[]

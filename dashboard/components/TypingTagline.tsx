@@ -1,7 +1,7 @@
 'use client'
 
 import './TypingTagline.css'
-import WorkflowPanel from './WorkflowPanel'
+import WorkflowPanel from '@/components/WorkflowPanel'
 
 export default function TypingTagline() {
   return (
