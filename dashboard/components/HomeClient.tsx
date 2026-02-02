@@ -54,7 +54,7 @@ export default function HomeClient({
   return (
     <div className="space-y-8">
       <ScrollableRow 
-        title="Render" 
+        title="RENDER" 
         repos={renderRepos} 
         icon="/images/render-logomark.png"
         selectedRepo={selectedSection === 'render' ? selectedRepo : null}
@@ -63,7 +63,7 @@ export default function HomeClient({
       />
       
       <ScrollableRow 
-        title="Python" 
+        title="PYTHON" 
         repos={pythonRepos} 
         icon="/images/python.png"
         selectedRepo={selectedSection === 'python' ? selectedRepo : null}
@@ -72,7 +72,7 @@ export default function HomeClient({
       />
 
       <ScrollableRow 
-        title="TypeScript" 
+        title="TYPESCRIPT" 
         repos={typeScriptRepos} 
         icon="/images/typescript.png"
         selectedRepo={selectedSection === 'typescript' ? selectedRepo : null}
@@ -81,7 +81,7 @@ export default function HomeClient({
       />
 
       <ScrollableRow 
-        title="Go" 
+        title="GO" 
         repos={goRepos} 
         icon="/images/go.png"
         selectedRepo={selectedSection === 'go' ? selectedRepo : null}
@@ -91,3 +91,4 @@ export default function HomeClient({
     </div>
   )
 }
+

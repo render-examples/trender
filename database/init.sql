@@ -26,6 +26,12 @@
 \echo 'Creating Analytics Views...'
 \i schema/04_views.sql
 
+-- ====================================
+-- WORKFLOW TRACES
+-- ====================================
+\echo 'Creating Workflow Traces tables...'
+\i schema/05_workflow_traces.sql
+
 \echo ''
 \echo '=========================================='
 \echo 'Database initialization complete!'
@@ -56,5 +62,8 @@
 \echo '  - analytics_language_trends: Language-level aggregates'
 \echo '  - analytics_repo_history: Historical repo trends'
 \echo ''
-\echo 'Total: 9 tables + 6 views'
+\echo 'WORKFLOW TRACES (1 table):'
+\echo '  - fact_workflow_runs: Execution traces with task timing'
+\echo ''
+\echo 'Total: 10 tables + 6 views'
 \echo ''

@@ -45,7 +45,7 @@ export default function RepoCard({ repo, isSelected, onCardClick }: RepoCardProp
           </div>
 
           <p 
-            className="text-xs sm:text-sm text-zinc-400 flex-1 line-clamp-4"
+            className="text-xs sm:text-sm text-zinc-200 flex-1 line-clamp-4"
           >
             {repo.description || 'No description available'}
           </p>

@@ -63,7 +63,11 @@ check_prerequisites() {
         # Try to load from .env file
         if [ -f "$PROJECT_ROOT/.env" ]; then
             print_info "Loading DATABASE_URL from .env file..."
-            export $(grep -v '^#' "$PROJECT_ROOT/.env" | grep DATABASE_URL | xargs)
+            # Safely load DATABASE_URL from .env (avoid shell injection)
+            set -a
+            # shellcheck source=/dev/null
+            source <(grep -E '^DATABASE_URL=' "$PROJECT_ROOT/.env")
+            set +a
         fi
         
         if [ -z "$DATABASE_URL" ]; then
@@ -293,8 +297,8 @@ main() {
     # Parse arguments
     DRY_RUN=false
     
-    for arg in "$@"; do
-        case $arg in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             --dry-run)
                 DRY_RUN=true
                 shift
@@ -314,7 +318,7 @@ main() {
                 exit 0
                 ;;
             *)
-                print_error "Unknown option: $arg"
+                print_error "Unknown option: $1"
                 echo "Use --help for usage information"
                 exit 1
                 ;;

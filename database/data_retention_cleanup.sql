@@ -85,58 +85,58 @@ SELECT
 SELECT 
     'raw_github_repos' as table_name,
     COUNT(*) as row_count,
-    MIN(fetch_timestamp) as oldest_record,
-    MAX(fetch_timestamp) as newest_record
+    COALESCE(MIN(fetch_timestamp), NOW()) as oldest_record,
+    COALESCE(MAX(fetch_timestamp), NOW()) as newest_record
 FROM raw_github_repos
 UNION ALL
 SELECT 
     'raw_repo_metrics',
     COUNT(*),
-    MIN(fetch_timestamp),
-    MAX(fetch_timestamp)
+    COALESCE(MIN(fetch_timestamp), NOW()),
+    COALESCE(MAX(fetch_timestamp), NOW())
 FROM raw_repo_metrics
 UNION ALL
 SELECT 
     'stg_repos_validated',
     COUNT(*),
-    MIN(loaded_at),
-    MAX(loaded_at)
+    COALESCE(MIN(loaded_at), NOW()),
+    COALESCE(MAX(loaded_at), NOW())
 FROM stg_repos_validated
 UNION ALL
 SELECT 
     'stg_render_enrichment',
     COUNT(*),
-    MIN(loaded_at),
-    MAX(loaded_at)
+    COALESCE(MIN(loaded_at), NOW()),
+    COALESCE(MAX(loaded_at), NOW())
 FROM stg_render_enrichment
 UNION ALL
 SELECT 
     'fact_repo_snapshots',
     COUNT(*),
-    MIN(snapshot_date)::timestamptz,
-    MAX(snapshot_date)::timestamptz
+    COALESCE(MIN(snapshot_date)::timestamptz, NOW()),
+    COALESCE(MAX(snapshot_date)::timestamptz, NOW())
 FROM fact_repo_snapshots
 UNION ALL
 SELECT 
     'fact_render_usage',
     COUNT(*),
-    MIN(snapshot_date)::timestamptz,
-    MAX(snapshot_date)::timestamptz
+    COALESCE(MIN(snapshot_date)::timestamptz, NOW()),
+    COALESCE(MAX(snapshot_date)::timestamptz, NOW())
 FROM fact_render_usage
 UNION ALL
 SELECT 
     'dim_repositories (current)',
     COUNT(*),
-    MIN(valid_from),
-    MAX(valid_from)
+    COALESCE(MIN(valid_from), NOW()),
+    COALESCE(MAX(valid_from), NOW())
 FROM dim_repositories
 WHERE is_current = TRUE
 UNION ALL
 SELECT 
     'dim_repositories (history)',
     COUNT(*),
-    MIN(valid_from),
-    MAX(valid_to)
+    COALESCE(MIN(valid_from), NOW()),
+    COALESCE(MAX(valid_to), NOW())
 FROM dim_repositories
 WHERE is_current = FALSE
 ORDER BY table_name;
