@@ -13,8 +13,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Constants
-RENDER_REPOS_PER_PAGE = 200  # Number of results to fetch when searching for render.yaml
+RENDER_REPOS_PER_PAGE = 100  # Number of results to fetch when searching for render.yaml
 
 
 class GitHubAPIClient:
