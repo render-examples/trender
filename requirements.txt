@@ -1,0 +1,18 @@
+# Root-level requirements for utility scripts (bin/)
+# For workflow-specific dependencies, see workflows/requirements.txt
+# For trigger-specific dependencies, see trigger/requirements.txt
+
+# HTTP Client (for bin/local_dev.py server health checks)
+requests>=2.31.0
+
+# Environment variables (for bin/local_dev.py)
+python-dotenv>=1.0.0
+
+# Note: To set up the complete development environment, install:
+# 1. Root utilities: pip install -r requirements.txt
+# 2. Workflows: pip install -r workflows/requirements.txt
+# 3. Trigger: pip install -r trigger/requirements.txt
+#
+# Or install all at once:
+# pip install -r requirements.txt -r workflows/requirements.txt -r trigger/requirements.txt
+
