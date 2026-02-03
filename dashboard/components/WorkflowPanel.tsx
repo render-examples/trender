@@ -74,6 +74,15 @@ export default function WorkflowPanel() {
     return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
   }
 
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      'completed': 'text-green-500',
+      'failed': 'text-red-500',
+      'running': 'text-yellow-500'
+    }
+    return colors[status] || 'text-yellow-500'
+  }
+
   return (
     <div className="mt-8 bg-black">
       {/* Collapsible Header */}
@@ -157,13 +166,7 @@ export default function WorkflowPanel() {
                 </div>
                 <div>
                   <span className="text-zinc-400">Status:</span>{' '}
-                  <span className={
-                    workflowRun.status === 'completed' 
-                      ? 'text-green-500' 
-                      : workflowRun.status === 'failed'
-                      ? 'text-red-500'
-                      : 'text-yellow-500'
-                  }>
+                  <span className={getStatusColor(workflowRun.status)}>
                     {workflowRun.status}
                   </span>
                 </div>

@@ -163,6 +163,53 @@ async def init_connections_with_error_handling():
         sys.exit(1)
 
 
+def _process_task_result(result, index: int, target_languages: List[str], trace: WorkflowTrace):
+    """Process a single task result and update trace."""
+    # Determine task name and language
+    is_language_task = index < len(target_languages)
+    task_name = target_languages[index] if is_language_task else 'fetch_render_repos'
+    language = task_name if is_language_task else None
+    
+    # Handle exceptions
+    if isinstance(result, Exception):
+        logger.error(f"Task {index} ({task_name}) FAILED: {type(result).__name__}: {str(result)}")
+        logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
+        task_ref = trace.add_task('fetch_language_repos' if language else 'fetch_render_repos', language=language)
+        trace.complete_task(task_ref, 'failed')
+        return
+    
+    # Handle successful results
+    result_len = len(result.get('repos', [])) if isinstance(result, dict) else 'N/A'
+    logger.info(f"Task {index} ({task_name}) SUCCESS: {type(result).__name__}, items={result_len}")
+    
+    if isinstance(result, dict):
+        task_ref = trace.add_task('fetch_language_repos' if language else 'fetch_render_repos', language=language)
+        task_ref['started_at'] = result.get('started_at', task_ref['started_at'])
+        task_ref['completed_at'] = result.get('completed_at')
+        task_ref['status'] = 'completed'
+        
+        # Add subtasks from the result to the trace
+        for subtask_timing in result.get('subtasks', []):
+            subtask = trace.add_subtask(task_ref, subtask_timing['task_name'])
+            subtask['started_at'] = subtask_timing['started_at']
+            subtask['completed_at'] = subtask_timing['completed_at']
+            subtask['status'] = subtask_timing['status']
+
+
+def _add_task_to_trace(result: Dict, trace: WorkflowTrace, language: Optional[str] = None):
+    """Add a completed task and its subtasks to the trace."""
+    task_ref = trace.add_task('fetch_language_repos', language=language)
+    task_ref['started_at'] = result.get('started_at', task_ref['started_at'])
+    task_ref['completed_at'] = result.get('completed_at')
+    task_ref['status'] = 'completed'
+    
+    for subtask_timing in result.get('subtasks', []):
+        subtask = trace.add_subtask(task_ref, subtask_timing['task_name'])
+        subtask['started_at'] = subtask_timing['started_at']
+        subtask['completed_at'] = subtask_timing['completed_at']
+        subtask['status'] = subtask_timing['status']
+
+
 # ============================================================================
 # Main Workflow Task
 # ============================================================================
@@ -190,119 +237,50 @@ async def main_analysis_task() -> Dict:
         if DEV_MODE:
             # Development mode: Python only + ETL pipeline
             logger.info("DEV_MODE enabled - running Python task only")
-            
-            # Run Python fetch task
             python_result = await fetch_language_repos('Python')
-            
-            # Track Python fetch task with actual start/end times
-            python_task = trace.add_task('fetch_language_repos', language='Python')
-            python_task['started_at'] = python_result.get('started_at', python_task['started_at'])
-            python_task['completed_at'] = python_result.get('completed_at')
-            python_task['status'] = 'completed'
-            
-            # Add subtasks from the result to the trace
-            for subtask_timing in python_result.get('subtasks', []):
-                subtask = trace.add_subtask(python_task, subtask_timing['task_name'])
-                subtask['started_at'] = subtask_timing['started_at']
-                subtask['completed_at'] = subtask_timing['completed_at']
-                subtask['status'] = subtask_timing['status']
-            
+            _add_task_to_trace(python_result, trace, language='Python')
             logger.info("Python task completed, starting ETL pipeline")
             
-            # Initialize connections for ETL pipeline
             github_api, db_pool = await init_connections_with_error_handling()
-            logger.info("Connections initialized for ETL pipeline")
-            
-            # Track aggregate task
             aggregate_task = trace.add_task('aggregate_results')
-            
-            # Run ETL pipeline: Extract from staging → Transform → Load to analytics
-            # Note: aggregate_results expects the old format (list of lists), so we pass wrapped result
             final_result = await aggregate_results([python_result], db_pool, execution_start, trace)
             trace.complete_task(aggregate_task)
             
             execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
             logger.info(f"DEV_MODE workflow completed in {execution_time}s")
             
-            # Complete workflow trace
             trace.repos_processed = final_result.get('repos_processed', 0)
             trace.complete('completed')
             await trace.persist(db_pool)
             
-            # Add dev_mode flag to result
-            final_result['dev_mode'] = True
-            final_result['languages'] = ['Python']
-            final_result['trace_id'] = trace.run_id
-            
+            final_result.update({
+                'dev_mode': True,
+                'languages': ['Python'],
+                'trace_id': trace.run_id
+            })
             return final_result
         else:
             # Production mode: Full pipeline
-            # Spawn parallel language analysis tasks (they initialize their own connections)
-            language_tasks = [
-                fetch_language_repos(lang)
-                for lang in TARGET_LANGUAGES
-            ]
+            language_tasks = [fetch_language_repos(lang) for lang in TARGET_LANGUAGES]
             logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
 
-            # Execute language analysis and Render projects fetch in parallel
-            results = await asyncio.gather(
-                *language_tasks,
-                fetch_render_repos(),
-                return_exceptions=True
-            )
+            results = await asyncio.gather(*language_tasks, fetch_render_repos(), return_exceptions=True)
 
-            # Log results from parallel tasks and update trace
+            # Process results and update trace
             logger.info(f"Parallel tasks completed. Total results: {len(results)}")
             for i, result in enumerate(results):
-                if i < len(TARGET_LANGUAGES):
-                    task_name = TARGET_LANGUAGES[i]
-                    language = task_name
-                else:
-                    task_name = 'fetch_render_repos'
-                    language = None
-                
-                if isinstance(result, Exception):
-                    logger.error(f"Task {i} ({task_name}) FAILED: {type(result).__name__}: {str(result)}")
-                    logger.error("".join(traceback.format_exception(type(result), result, result.__traceback__)))
-                    # Still add the failed task to the trace
-                    task_ref = trace.add_task('fetch_language_repos' if language else 'fetch_render_repos', language=language)
-                    trace.complete_task(task_ref, 'failed')
-                else:
-                    # Result is now a dict with 'repos', 'subtasks', 'started_at', 'completed_at' keys
-                    result_len = len(result.get('repos', [])) if isinstance(result, dict) else 'N/A'
-                    logger.info(f"Task {i} ({task_name}) SUCCESS: {type(result).__name__}, items={result_len}")
-                    
-                    # Add task to trace with actual start/end times from the result
-                    if isinstance(result, dict):
-                        task_ref = trace.add_task('fetch_language_repos' if language else 'fetch_render_repos', language=language)
-                        # Override the timestamps with actual execution times
-                        task_ref['started_at'] = result.get('started_at', task_ref['started_at'])
-                        task_ref['completed_at'] = result.get('completed_at')
-                        task_ref['status'] = 'completed'
-                        
-                        # Add subtasks from the result to the trace
-                        for subtask_timing in result.get('subtasks', []):
-                            subtask = trace.add_subtask(task_ref, subtask_timing['task_name'])
-                            subtask['started_at'] = subtask_timing['started_at']
-                            subtask['completed_at'] = subtask_timing['completed_at']
-                            subtask['status'] = subtask_timing['status']
+                _process_task_result(result, i, TARGET_LANGUAGES, trace)
 
             # Aggregate and store final results
             github_api, db_pool = await init_connections_with_error_handling()
-            logger.info("Connections initialized for aggregation")
-            
-            # Track aggregate task
             aggregate_task = trace.add_task('aggregate_results')
             final_result = await aggregate_results(results, db_pool, execution_start, trace)
             trace.complete_task(aggregate_task)
             
-            # Complete workflow trace
             trace.repos_processed = final_result.get('repos_processed', 0)
             trace.complete('completed')
             await trace.persist(db_pool)
-            
             final_result['trace_id'] = trace.run_id
-
             return final_result
     except Exception as e:
         # Mark trace as failed and persist
@@ -344,7 +322,7 @@ async def fetch_language_repos(language: str) -> Dict:
         }
     """
     start_time = datetime.now(timezone.utc)
-    logger.info(f"fetch_language_repos START for {language}")
+    logger.info(f"Fetching {language} repositories")
     
     # Initialize connections for this task
     github_api, db_pool = await init_connections_with_error_handling()
@@ -399,7 +377,7 @@ async def fetch_language_repos(language: str) -> Dict:
         batch_results = await analyze_repo_batch(repos_to_process, readme_contents)
         
         end_time = datetime.now(timezone.utc)
-        logger.info(f"fetch_language_repos END for {language}, returning {len(batch_results['enriched_repos'])} results")
+        logger.info(f"Fetched {len(batch_results['enriched_repos'])} {language} repos")
         return {
             'repos': batch_results['enriched_repos'],
             'subtasks': [batch_results['timing']],
@@ -435,30 +413,14 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
         }
     """
     start_time = datetime.now(timezone.utc)
-    logger.info(f"analyze_repo_batch START: {len(repos)} repos")
+    logger.info(f"analyze_repo_batch: Processing {len(repos)} repos")
     readme_contents = readme_contents or {}
     
     # Initialize connections for this independent task
     try:
-        logger.info("Initializing connections...")
         github_api, db_pool = await init_connections()
-        logger.info(f"Connections initialized successfully. Session: {github_api.session is not None}, Pool: {db_pool is not None}")
-    except ConnectionError as e:
-        logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
-        logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
-        end_time = datetime.now(timezone.utc)
-        return {
-            'enriched_repos': [],
-            'timing': {
-                'task_name': 'analyze_repo_batch',
-                'started_at': start_time.isoformat(),
-                'completed_at': end_time.isoformat(),
-                'status': 'failed'
-            }
-        }
-    except Exception as e:
-        logger.error(f"FATAL: Failed to initialize connections: {type(e).__name__}: {str(e)}")
-        logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+    except (ConnectionError, Exception) as e:
+        logger.error(f"Failed to initialize connections: {type(e).__name__}: {str(e)}")
         end_time = datetime.now(timezone.utc)
         return {
             'enriched_repos': [],
@@ -480,7 +442,6 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
                 for repo in batch
             ]
 
-            # Gather with exceptions to continue on failures
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
             # Filter out exceptions and collect successful results
@@ -488,11 +449,10 @@ async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] 
                 if isinstance(result, Exception):
                     repo_name = batch[i].get('full_name', 'unknown')
                     logger.error(f"Failed to analyze {repo_name}: {type(result).__name__}: {str(result)}")
-                    logger.error(f"Full traceback: {''.join(traceback.format_exception(type(result), result, result.__traceback__))}")
                 elif result is not None:
                     enriched_repos.append(result)
 
-        logger.info(f"analyze_repo_batch END: {len(enriched_repos)} enriched")
+        logger.info(f"analyze_repo_batch: Completed with {len(enriched_repos)} enriched repos")
         end_time = datetime.now(timezone.utc)
         return {
             'enriched_repos': enriched_repos,
@@ -575,10 +535,7 @@ async def analyze_single_repo(repo: Dict, github_api: GitHubAPIClient,
         enriched['updated_at'] = datetime.fromisoformat(enriched['updated_at'].replace('Z', '+00:00'))
 
     # Store in staging layer
-    logger.info(f"Storing {enriched['repo_full_name']} to staging (language={language})")
     await store_in_staging(enriched, db_pool)
-    
-    logger.info(f"Successfully stored {enriched['repo_full_name']} to staging")
 
     # Return minimal summary (data is already in DB, no need to pass full objects)
     return {
@@ -628,7 +585,7 @@ async def fetch_render_repos() -> Dict:
         }
     """
     start_time = datetime.now(timezone.utc)
-    logger.info("fetch_render_repos START - code search for render.yaml")
+    logger.info("Searching for render.yaml repositories")
     
     # Initialize connections
     github_api, db_pool = await init_connections_with_error_handling()
@@ -675,7 +632,7 @@ async def fetch_render_repos() -> Dict:
         analyzed = await analyze_repo_batch(repos_to_process, readme_contents)
         
         end_time = datetime.now(timezone.utc)
-        logger.info(f"fetch_render_repos END: {len(analyzed['enriched_repos'])} analyzed")
+        logger.info(f"Found {len(analyzed['enriched_repos'])} Render repos")
         return {
             'repos': analyzed['enriched_repos'],
             'subtasks': [analyzed['timing']],
@@ -777,7 +734,7 @@ async def aggregate_results(all_results: List, db_pool: asyncpg.Pool,
     Returns:
         Execution summary dictionary
     """
-    logger.info("aggregate_results START")
+    logger.info("Aggregating results from all tasks")
     
     # Count successful task results
     # Results are now dicts with 'repos' key, or Exceptions, or empty dicts
@@ -1067,8 +1024,6 @@ async def load_to_analytics_simple(repos: List, conn: asyncpg.Connection):
                                 complexity_score = EXCLUDED.complexity_score,
                                 has_blueprint = EXCLUDED.has_blueprint
                         """, repo_key, service_key, today, complexity, has_blueprint)
-                        
-                        logger.debug(f"Inserted fact_render_usage for {repo_name}, service: {service_type}")
             
         except Exception as e:
             logger.error(f"Error loading repo {repo_name}: {type(e).__name__}: {e}")

@@ -58,7 +58,7 @@ lib/                    # Utilities
 - Real-time workflow status polling
 - Interactive task tree with expand/collapse
 - Execution timeline with color-coded states
-- Duration calculations and status badges
+- Duration calculations
 
 ### 4. Responsive design
 - Horizontal scrolling for repo lists
@@ -183,7 +183,7 @@ const repos = await pool.query(`
 
 **Features:**
 - Expand/collapse nested tasks
-- Status badges with colors
+- Color-coded status indicators
 - Indentation for hierarchy
 - Duration display
 

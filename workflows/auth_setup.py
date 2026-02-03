@@ -166,7 +166,7 @@ def setup_oauth():
     print("Prerequisites:")
     print(f"  ✓ Client ID: {GITHUB_CLIENT_ID[:10]}...")
     print(f"  ✓ Client Secret: {'*' * 20}")
-    print(f"  ✓ Callback URL: http://localhost:8000/callback\n")
+    print("  ✓ Callback URL: http://localhost:8000/callback\n")
     
     # Step 1: Start local callback server
     callback_port = 8000
@@ -179,7 +179,7 @@ def setup_oauth():
         if 'Address already in use' in str(e):
             print(f"\n❌ Error: Port {callback_port} is already in use.")
             print(f"   Run: lsof -ti:{callback_port} | xargs kill -9")
-            print(f"   Then try again.\n")
+            print("   Then try again.\n")
         else:
             print(f"\n❌ Error: {str(e)}\n")
         return None
@@ -193,7 +193,7 @@ def setup_oauth():
         f"&scope={scopes}"
     )
     
-    print(f"2. Opening browser for authorization...")
+    print("2. Opening browser for authorization...")
     print(f"   If browser doesn't open, visit:\n   {auth_url}\n")
     webbrowser.open(auth_url)
     
@@ -241,18 +241,16 @@ def main():
     
     choice = input("Enter your choice (1 or 2): ").strip()
     
-    token = None
-    method = None
-    
-    if choice == '1':
-        method = 'PAT'
-        token = setup_pat()
-    elif choice == '2':
-        method = 'OAuth'
-        token = setup_oauth()
-    else:
-        print("\n❌ Invalid choice. Please run the script again and select 1 or 2.")
-        sys.exit(1)
+    match choice:
+        case '1':
+            method = 'PAT'
+            token = setup_pat()
+        case '2':
+            method = 'OAuth'
+            token = setup_oauth()
+        case _:
+            print("\n❌ Invalid choice. Please run the script again and select 1 or 2.")
+            sys.exit(1)
     
     if not token:
         print("\n❌ Setup failed or was cancelled.")

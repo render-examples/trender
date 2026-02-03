@@ -75,10 +75,11 @@ class GitHubAPIClient:
             
             case 403:
                 error_msg = await response.text()
-                if 'rate limit' in error_msg.lower():
+                error_lower = error_msg.lower()
+                if 'rate limit' in error_lower:
                     logger.error("GitHub rate limit exceeded")
                     return (False, None)
-                elif 'insufficient' in error_msg.lower():
+                if 'insufficient' in error_lower:
                     logger.error("GitHub token has insufficient scopes")
                     return (False, None)
                 raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")

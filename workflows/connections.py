@@ -40,8 +40,8 @@ async def init_connections():
     if not database_url:
         raise ValueError("DATABASE_URL environment variable is required")
     # Initialize database connection pool with retry logic
-    pool_size_min = int(os.getenv('DATABASE_POOL_MIN_SIZE', '2'))  # Reduced from 5
-    pool_size_max = int(os.getenv('DATABASE_POOL_MAX_SIZE', '10'))  # Reduced from 20
+    pool_size_min = int(os.getenv('DATABASE_POOL_MIN_SIZE', '2'))
+    pool_size_max = int(os.getenv('DATABASE_POOL_MAX_SIZE', '10'))
     
     max_retries = 3
     for attempt in range(max_retries):
@@ -50,8 +50,8 @@ async def init_connections():
                 database_url,
                 min_size=pool_size_min,
                 max_size=pool_size_max,
-                timeout=30,  # 30 second connection timeout
-                command_timeout=60  # 60 second query timeout
+                timeout=30,
+                command_timeout=60
             )
             
             # Test connection
@@ -60,20 +60,24 @@ async def init_connections():
             
             return github_api, db_pool
             
-        except asyncpg.InvalidPasswordError:
-            raise ConnectionError("Database authentication failed (wrong password)")
-        except asyncpg.InvalidCatalogNameError:
-            raise ConnectionError("Database does not exist")
-        except asyncpg.CannotConnectNowError:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                continue
-            raise ConnectionError("Database connection refused (server not accepting connections)")
-        except Exception as e:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)
-                continue
-            raise ConnectionError(f"Failed to create database connection pool: {e}")
+        except (asyncpg.InvalidPasswordError, asyncpg.InvalidCatalogNameError, 
+                asyncpg.CannotConnectNowError, Exception) as e:
+            # Handle specific database errors
+            match type(e).__name__:
+                case 'InvalidPasswordError':
+                    raise ConnectionError("Database authentication failed (wrong password)")
+                case 'InvalidCatalogNameError':
+                    raise ConnectionError("Database does not exist")
+                case 'CannotConnectNowError':
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    raise ConnectionError("Database connection refused (server not accepting connections)")
+                case _:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    raise ConnectionError(f"Failed to create database connection pool: {e}")
     
     raise ConnectionError("Failed to connect after 3 attempts")
 
