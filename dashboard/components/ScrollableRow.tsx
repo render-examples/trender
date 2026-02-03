@@ -76,8 +76,14 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
 
   // Handle card click
   const handleCardClick = (repo: Repository, index: number) => {
-    onCardClick(repo)
-    setSelectedIndex(index)
+    // If clicking the same card (by index), deselect it
+    if (selectedIndex === index) {
+      onClosePanel()
+      setSelectedIndex(null)
+    } else {
+      onCardClick(repo)
+      setSelectedIndex(index)
+    }
   }
 
   useEffect(() => {
@@ -166,7 +172,7 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
                   <RepoCard 
                     key={`${repo.repo_full_name}-${index}`} 
                     repo={repo}
-                    isSelected={selectedRepo?.repo_full_name === repo.repo_full_name}
+                    isSelected={selectedIndex === index}
                     onCardClick={() => handleCardClick(repo, index)}
                   />
                 ))
@@ -177,7 +183,7 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
       </div>
 
       {/* README Panel - outside the cards row container */}
-      {selectedRepo && (
+      {selectedRepo && selectedIndex !== null && (
         <ReadmePanel 
           repo={selectedRepo}
           onClose={onClosePanel}
