@@ -126,7 +126,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
 
 
 def get_access_token_from_code(client_id, client_secret, code):
-    """Exchange authorization code for access token."""
+    """Exchange authorization code for access token and refresh token."""
     import requests
     
     url = "https://github.com/login/oauth/access_token"
@@ -139,7 +139,15 @@ def get_access_token_from_code(client_id, client_secret, code):
     
     response = requests.post(url, data=data, headers=headers)
     result = response.json()
-    return result.get('access_token')
+    
+    # Return the full OAuth response including refresh token
+    return {
+        'access_token': result.get('access_token'),
+        'refresh_token': result.get('refresh_token'),
+        'expires_in': result.get('expires_in', 28800),  # Default 8 hours
+        'refresh_token_expires_in': result.get('refresh_token_expires_in', 15724800),  # Default 6 months
+        'token_type': result.get('token_type', 'bearer')
+    }
 
 
 def setup_oauth():
@@ -211,17 +219,37 @@ def setup_oauth():
     
     # Step 4: Exchange code for access token
     print("5. Exchanging code for access token...")
-    access_token = get_access_token_from_code(
+    token_data = get_access_token_from_code(
         GITHUB_CLIENT_ID,
         GITHUB_CLIENT_SECRET,
         authorization_code
     )
     
-    if not access_token:
+    if not token_data or not token_data.get('access_token'):
         print("\n❌ Error: Failed to get access token.")
         return None
     
-    return access_token
+    # Verify the token works
+    print("6. Verifying OAuth token...")
+    import requests
+    headers = {
+        'Authorization': f'token {token_data["access_token"]}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    try:
+        response = requests.get('https://api.github.com/user', headers=headers)
+        if response.status_code == 200:
+            user_data = response.json()
+            username = user_data.get('login', 'Unknown')
+            print(f"✅ OAuth token verified! Authenticated as: {username}")
+        else:
+            print(f"⚠️  Warning: Token verification failed (HTTP {response.status_code})")
+            print(f"   Response: {response.text}")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not verify token: {str(e)}")
+    
+    return token_data
 
 
 def main():
@@ -244,10 +272,19 @@ def main():
     match choice:
         case '1':
             method = 'PAT'
-            token = setup_pat()
+            result = setup_pat()
+            if result:
+                token = result
+                refresh_token = None
         case '2':
             method = 'OAuth'
-            token = setup_oauth()
+            result = setup_oauth()
+            if result:
+                token = result.get('access_token')
+                refresh_token = result.get('refresh_token')
+            else:
+                token = None
+                refresh_token = None
         case _:
             print("\n❌ Invalid choice. Please run the script again and select 1 or 2.")
             sys.exit(1)
@@ -260,21 +297,49 @@ def main():
     print("\n" + "=" * 70)
     print(f"✅ SUCCESS! Your GitHub access token ({method}):")
     print("=" * 70)
-    print(f"\n{token}\n")
+    print(f"\nAccess Token: {token}\n")
+    
+    if refresh_token:
+        print(f"Refresh Token: {refresh_token}\n")
+        print("⚠️  IMPORTANT: OAuth tokens expire after 8 hours!")
+        print("   The refresh token allows automatic renewal.\n")
+    
     print("=" * 70)
     print("\n📝 Next Steps:\n")
     print("1. Add this to your .env file:")
-    print(f"   GITHUB_ACCESS_TOKEN={token}\n")
-    print("2. Add the same token to your Render Dashboard:")
+    print(f"   GITHUB_ACCESS_TOKEN={token}")
+    
+    if refresh_token:
+        print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
+        if method == 'OAuth':
+            GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
+            GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
+            print(f"   GITHUB_CLIENT_ID={GITHUB_CLIENT_ID}")
+            print(f"   GITHUB_CLIENT_SECRET={GITHUB_CLIENT_SECRET}")
+    
+    print("\n2. Add the same tokens to your Render Dashboard:")
     print("   - Go to your workflow service (trender-wf)")
     print("   - Navigate to Environment tab")
-    print("   - Add: GITHUB_ACCESS_TOKEN={token}\n")
-    print("3. Deploy your workflow and trigger a run!")
+    print(f"   - Add: GITHUB_ACCESS_TOKEN={token}")
+    
+    if refresh_token:
+        print(f"   - Add: GITHUB_REFRESH_TOKEN={refresh_token}")
+        if method == 'OAuth':
+            GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
+            GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
+            print(f"   - Add: GITHUB_CLIENT_ID={GITHUB_CLIENT_ID}")
+            print(f"   - Add: GITHUB_CLIENT_SECRET={GITHUB_CLIENT_SECRET}")
+    
+    print("\n3. Deploy your workflow and trigger a run!")
     print("=" * 70)
     print("\n⚠️  Security Reminder:")
-    print("   - Never commit this token to version control")
-    print("   - Store it securely (it's like a password)")
-    print("   - Revoke access at: https://github.com/settings/tokens")
+    print("   - Never commit these tokens to version control")
+    print("   - Store them securely (they're like passwords)")
+    if method == 'PAT':
+        print("   - Revoke access at: https://github.com/settings/tokens")
+    else:
+        print("   - Revoke access at: https://github.com/settings/applications")
+        print("   - OAuth tokens auto-refresh when GITHUB_REFRESH_TOKEN is set")
     print("=" * 70)
 
 

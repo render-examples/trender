@@ -251,6 +251,32 @@ The `WorkflowTrace` class tracks execution with hierarchical task timing:
 
 Stored in `fact_workflow_runs` for observability.
 
+## Authentication Setup
+
+The workflow requires GitHub API authentication. Run the setup script:
+
+```bash
+cd workflows
+python auth_setup.py
+```
+
+**Choose your authentication method:**
+
+### Option A: Personal Access Token (PAT) - Recommended
+- ✅ Simple setup (one token)
+- ✅ No expiration (or you control it)
+- ✅ Same API rate limits (5,000 requests/hour)
+- Generate at: https://github.com/settings/tokens/new
+- Required scopes: `repo`, `read:org`
+
+### Option B: OAuth App - Advanced
+- ⚠️ Tokens expire after 8 hours
+- ⚠️ Requires 4 credentials (access token, refresh token, client ID, client secret)
+- ✅ Automatic token refresh (if configured correctly)
+- Use case: Team setups, production deployments with user authorization
+
+**⚠️ OAuth Token Issue?** If your workflow hangs after 5-8 hours with OAuth tokens, see [OAUTH_TROUBLESHOOTING.md](../OAUTH_TROUBLESHOOTING.md) for the fix.
+
 ## Dependencies
 
 See `requirements.txt`:

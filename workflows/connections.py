@@ -25,12 +25,36 @@ async def init_connections():
     if not github_access_token:
         raise ValueError("GITHUB_ACCESS_TOKEN environment variable is required")
     
-    if not github_access_token.startswith(('ghp_', 'gho_', 'github_pat_')):
-        raise ValueError("GITHUB_ACCESS_TOKEN appears invalid (wrong format)")
+    # Detect token type and validate format
+    is_oauth_token = github_access_token.startswith('ghu_')
+    is_pat_token = github_access_token.startswith(('ghp_', 'gho_', 'github_pat_'))
+    
+    if not (is_oauth_token or is_pat_token):
+        raise ValueError(f"GITHUB_ACCESS_TOKEN appears invalid (wrong format). "
+                        f"Expected to start with 'ghp_', 'gho_', 'github_pat_', or 'ghu_'")
+    
+    # Get OAuth-specific credentials if using OAuth token
+    github_refresh_token = os.getenv('GITHUB_REFRESH_TOKEN') if is_oauth_token else None
+    github_client_id = os.getenv('GITHUB_CLIENT_ID') if is_oauth_token else None
+    github_client_secret = os.getenv('GITHUB_CLIENT_SECRET') if is_oauth_token else None
+    
+    # Warn if OAuth token is used without refresh credentials
+    if is_oauth_token and not github_refresh_token:
+        print("⚠️  WARNING: Using OAuth token without GITHUB_REFRESH_TOKEN")
+        print("   OAuth tokens expire after 8 hours. Set GITHUB_REFRESH_TOKEN for auto-renewal.")
+    
+    if is_oauth_token and github_refresh_token and (not github_client_id or not github_client_secret):
+        print("⚠️  WARNING: GITHUB_REFRESH_TOKEN is set but GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is missing")
+        print("   Token refresh will fail. Set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.")
     
     # Initialize GitHub API client
     try:
-        github_api = GitHubAPIClient(access_token=github_access_token)
+        github_api = GitHubAPIClient(
+            access_token=github_access_token,
+            refresh_token=github_refresh_token,
+            client_id=github_client_id,
+            client_secret=github_client_secret
+        )
         await github_api.__aenter__()
     except Exception as e:
         raise ConnectionError(f"Failed to initialize GitHub API client: {e}")
