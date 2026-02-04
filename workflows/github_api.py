@@ -99,38 +99,26 @@ class GitHubAPIClient:
         try:
             async with self.session.post(url, data=data, headers=headers) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Token refresh failed (HTTP {response.status}): {error_text}")
+                    logger.error(f"Token refresh failed (HTTP {response.status}): {await response.text()}")
                     return False
                 
                 result = await response.json()
-                
                 new_access_token = result.get('access_token')
-                new_refresh_token = result.get('refresh_token')
-                expires_in = result.get('expires_in', 28800)  # Default 8 hours
                 
                 if not new_access_token:
                     logger.error(f"Token refresh failed: no access_token in response: {result}")
                     return False
                 
-                # Update tokens
+                # Update tokens and expiration
                 self.access_token = new_access_token
-                if new_refresh_token:
-                    self.refresh_token = new_refresh_token
+                self.refresh_token = result.get('refresh_token') or self.refresh_token
+                self.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=result.get('expires_in', 28800))
                 
-                self.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                
-                # Update session headers with new token
+                # Update session headers
                 if self.session:
-                    self.session.headers.update({
-                        'Authorization': f'token {self.access_token}'
-                    })
+                    self.session.headers.update({'Authorization': f'token {self.access_token}'})
                 
-                logger.info(f"✅ OAuth token refreshed successfully! New expiration: {self.token_expires_at.isoformat()}")
-                logger.info(f"   New access token: {new_access_token[:20]}...")
-                if new_refresh_token:
-                    logger.info(f"   New refresh token: {new_refresh_token[:20]}...")
-                
+                logger.info(f"✅ OAuth token refreshed! Expires: {self.token_expires_at.isoformat()}")
                 return True
                 
         except Exception as e:
@@ -162,50 +150,40 @@ class GitHubAPIClient:
         """
         Handle HTTP response status codes and errors.
         
-        Args:
-            response: The aiohttp response object
-            url: The URL that was called
-            attempt: Current retry attempt number
-            retry_count: Total number of retries allowed
-        
         Returns:
             Tuple of (should_retry, result)
-            - should_retry: True if the request should be retried
-            - result: The parsed JSON result if successful, None otherwise
         """
-        match response.status:
-            case 404:
-                return (False, None)
-            
-            case 403:
-                error_msg = await response.text()
-                error_lower = error_msg.lower()
-                if 'rate limit' in error_lower:
-                    logger.error("GitHub rate limit exceeded")
-                    return (False, None)
-                if 'insufficient' in error_lower:
-                    logger.error("GitHub token has insufficient scopes")
-                    return (False, None)
-                raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
-            
-            case 422:
-                logger.error(f"GitHub API invalid query: {url}")
-                return (False, None)
-            
-            case 503:
-                logger.warning("GitHub API temporarily unavailable (503)")
-                if attempt < retry_count - 1:
-                    await asyncio.sleep(5)
-                    return (True, None)  # Retry
-                return (False, None)
-            
-            case _:
-                response.raise_for_status()
+        if response.status == 404:
+            return (False, None)
         
-        # If we get here, response was successful
+        if response.status == 403:
+            error_msg = await response.text()
+            error_lower = error_msg.lower()
+            if 'rate limit' in error_lower:
+                logger.error("GitHub rate limit exceeded")
+            elif 'insufficient' in error_lower:
+                logger.error("GitHub token has insufficient scopes")
+            else:
+                raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
+            return (False, None)
+        
+        if response.status == 422:
+            logger.error(f"GitHub API invalid query: {url}")
+            return (False, None)
+        
+        if response.status == 503:
+            logger.warning("GitHub API temporarily unavailable (503)")
+            if attempt < retry_count - 1:
+                await asyncio.sleep(5)
+                return (True, None)
+            return (False, None)
+        
+        # Raise for other error status codes
+        response.raise_for_status()
+        
+        # Parse successful response
         try:
-            result = await response.json()
-            return (False, result)
+            return (False, await response.json())
         except json.JSONDecodeError:
             logger.error("Failed to parse GitHub API JSON response")
             return (False, None)
@@ -222,13 +200,12 @@ class GitHubAPIClient:
             logger.error("Cannot make API call: token is invalid and refresh failed")
             return None
         
-        # Check rate limit
-        if self.rate_limit_remaining < 100:
-            if self.rate_limit_reset:
-                sleep_duration = max(self.rate_limit_reset - datetime.now(timezone.utc).timestamp(), 0)
-                if sleep_duration > 0:
-                    logger.warning(f"Rate limit low, sleeping {sleep_duration}s")
-                    await asyncio.sleep(sleep_duration + 5)
+        # Check rate limit and sleep if needed
+        if self.rate_limit_remaining < 100 and self.rate_limit_reset:
+            sleep_duration = max(self.rate_limit_reset - datetime.now(timezone.utc).timestamp(), 0)
+            if sleep_duration > 0:
+                logger.warning(f"Rate limit low, sleeping {sleep_duration}s")
+                await asyncio.sleep(sleep_duration + 5)
         
         for attempt in range(retry_count):
             try:
@@ -237,36 +214,29 @@ class GitHubAPIClient:
                     self.rate_limit_remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
                     self.rate_limit_reset = int(response.headers.get('X-RateLimit-Reset', 0))
                     
-                    # Check for 401 Unauthorized - token may have expired
+                    # Handle 401 Unauthorized - token may have expired
                     if response.status == 401 and self.is_oauth_token:
                         logger.warning("Received 401 Unauthorized - attempting token refresh")
                         if await self._refresh_oauth_token():
                             logger.info("Token refreshed, retrying request...")
-                            continue  # Retry with new token
-                        else:
-                            logger.error("Token refresh failed, cannot continue")
-                            return None
+                            continue
+                        logger.error("Token refresh failed, cannot continue")
+                        return None
                     
                     # Handle response status and errors
                     should_retry, result = await self._handle_response_status(response, url, attempt, retry_count)
-                    
                     if should_retry:
-                        continue  # Retry the request
-                    
+                        continue
                     return result
                         
             except asyncio.TimeoutError:
                 logger.warning(f"GitHub API timeout (attempt {attempt + 1}/{retry_count})")
                 if attempt < retry_count - 1:
                     await asyncio.sleep(2 ** attempt)
-                    continue
-                return None
             except aiohttp.ClientError as e:
                 logger.warning(f"GitHub API error: {e} (attempt {attempt + 1}/{retry_count})")
                 if attempt < retry_count - 1:
                     await asyncio.sleep(2 ** attempt)
-                    continue
-                return None
         
         return None
 
@@ -386,22 +356,10 @@ class GitHubAPIClient:
             logger.debug(f"Failed to fetch README for {owner}/{repo}: {e}")
             return None
 
-    def _should_include_repo(self, repo_language: Optional[str], require_language: bool) -> bool:
-        """Check if a repo should be included based on language requirements."""
-        if repo_language:
-            return True
-        return not require_language
-    
-    def _is_file_in_root(self, file_path: str, filename: str) -> bool:
-        """Check if file is in root directory (no subdirectories)."""
-        return file_path == filename
-    
     def _parse_created_date(self, repo: Dict) -> Optional[datetime]:
         """Parse created_at date from repo data."""
         try:
-            created_at_str = repo.get('created_at', '')
-            # Handle both 'Z' and '+00:00' timezone formats
-            created_at_str = created_at_str.replace('Z', '+00:00')
+            created_at_str = repo.get('created_at', '').replace('Z', '+00:00')
             return datetime.fromisoformat(created_at_str)
         except (ValueError, AttributeError) as e:
             logger.warning(f"Failed to parse created_at for {repo.get('full_name')}: {e}")
@@ -409,12 +367,10 @@ class GitHubAPIClient:
     
     def _is_repo_valid(self, repo: Dict, created_since: Optional[datetime]) -> bool:
         """Validate repo has required fields and meets date filter."""
-        # Check required fields
         if not (repo.get('created_at') and repo.get('updated_at')):
             logger.warning(f"Dropping repo {repo.get('full_name')} - missing required timestamps")
             return False
         
-        # Check date filter if specified
         if created_since:
             created_at = self._parse_created_date(repo)
             if not created_at or created_at < created_since:
@@ -430,37 +386,29 @@ class GitHubAPIClient:
         
         logger.info(f"Fetching full details for {len(repos_needing_details)} repos with missing fields (batched)")
         
-        # Create a mapping for quick lookup
         repos_by_name = {repo.get('full_name'): repo for repo in repos}
         
-        # Prepare all API calls to run in parallel
         async def fetch_one_repo(repo_full_name: str) -> tuple[str, Optional[Dict]]:
-            """Fetch a single repo's details, returning (repo_name, details)."""
+            """Fetch a single repo's details."""
             try:
                 owner, name = repo_full_name.split('/', 1)
-                full_details = await self.get_repo_details(owner, name)
-                return (repo_full_name, full_details)
+                return (repo_full_name, await self.get_repo_details(owner, name))
             except Exception as e:
                 logger.warning(f"Failed to fetch details for {repo_full_name}: {e}")
                 return (repo_full_name, None)
         
-        # Batch all API calls concurrently using asyncio.gather
+        # Batch all API calls concurrently
         fetch_tasks = [fetch_one_repo(repo_name) for repo_name in repos_needing_details]
         results = await asyncio.gather(*fetch_tasks, return_exceptions=False)
         
         # Process results
         for repo_full_name, full_details in results:
             if full_details:
-                # Preserve default language assignment if it was set
-                original_repo = repos_by_name.get(repo_full_name, {})
-                preserved_language = original_repo.get('language')
-                
-                if default_language and preserved_language == default_language:
+                # Preserve default language if it was set
+                if default_language and repos_by_name.get(repo_full_name, {}).get('language') == default_language:
                     full_details['language'] = default_language
-                
                 repos_by_name[repo_full_name] = full_details
             else:
-                # Remove repos that failed to fetch
                 repos_by_name.pop(repo_full_name, None)
         
         return list(repos_by_name.values())
@@ -476,22 +424,20 @@ class GitHubAPIClient:
         for item in items:
             repo_data = item.get('repository', {})
             repo_full_name = repo_data.get('full_name')
-            repo_language = repo_data.get('language')
             
-            # Skip if already seen
+            # Skip if already seen or not in root directory
             if not repo_full_name or repo_full_name in seen_repos:
                 continue
-            
-            # Skip if not in root directory
-            if not self._is_file_in_root(item.get('path', ''), filename):
+            if item.get('path', '') != filename:
                 continue
             
             # Handle language requirements
+            repo_language = repo_data.get('language')
             if not repo_language:
                 if require_language:
                     repos_without_language += 1
                     continue
-                elif default_language:
+                if default_language:
                     repo_data['language'] = default_language
             
             # Add to results
@@ -568,17 +514,11 @@ class GitHubAPIClient:
         Search for independent Render projects using code search.
         Finds repositories with render.yaml in root directory, sorted by stars.
         
-        Special handling: Render projects often don't have a primary language detected by GitHub
-        (e.g., documentation repos, config-only repos). We assign "render" (lowercase) as the
-        language for ALL repos found via render.yaml search, regardless of GitHub's detection.
-        This allows us to identify Render projects by language='render' instead of a separate flag.
+        Special handling: Render projects often don't have a primary language detected by GitHub.
+        We assign "render" (lowercase) as the language for ALL repos found via render.yaml search.
         
         Hardcoded repos: To ensure we always have high-quality examples, we hardcode several
         prominent Render repositories that may not have render.yaml in their root.
-        
-        Args:
-            limit: Maximum number of results to return
-            created_since: Only return repos created since this date (optional)
         
         Returns:
             List of repository data dictionaries sorted by stars
@@ -588,7 +528,6 @@ class GitHubAPIClient:
         if created_since:
             logger.info(f"Filtering for repos created since {created_since.strftime('%Y-%m-%d')}")
         
-        # Hardcoded prominent Render repositories
         hardcoded_repos = [
             'Flagsmith/flagsmith',
             'run-llama/sec-insights',
@@ -600,13 +539,12 @@ class GitHubAPIClient:
         
         try:
             # Code search for render.yaml in root
-            # Don't require language, assign "render" (lowercase) as default for ALL repos
             repos = await self.search_repos_by_path(
                 'render.yaml', 
                 limit=limit, 
                 created_since=created_since,
-                require_language=False,  # Don't filter out repos without language
-                default_language='render'  # Assign "render" (lowercase) as language
+                require_language=False,
+                default_language='render'
             )
             logger.info(f"Found {len(repos)} repos via code search (all assigned language='render')")
             
@@ -619,7 +557,6 @@ class GitHubAPIClient:
                     hardcoded_fetch_tasks.append(self.get_repo_details(owner, name))
                 except ValueError:
                     logger.warning(f"Invalid hardcoded repo format: {repo_full_name}")
-                    continue
             
             # Fetch all hardcoded repos concurrently
             hardcoded_results = await asyncio.gather(*hardcoded_fetch_tasks, return_exceptions=True)
@@ -631,14 +568,10 @@ class GitHubAPIClient:
                     logger.warning(f"Failed to fetch hardcoded repo {hardcoded_repos[i]}: {result}")
                     continue
                 if result and isinstance(result, dict):
-                    # Assign 'render' language and validate (without date filter for hardcoded repos)
                     result['language'] = 'render'
-                    # Validate required fields but skip date filter for hardcoded showcase repos
                     if self._is_repo_valid(result, created_since=None):
                         hardcoded_valid.append(result)
                         logger.info(f"Added hardcoded repo: {result.get('full_name')} ({result.get('stargazers_count', 0)} stars)")
-                    else:
-                        logger.warning(f"Hardcoded repo {hardcoded_repos[i]} failed validation: {result.get('full_name')}")
             
             # Merge hardcoded repos with search results, avoiding duplicates
             seen_repos = {repo.get('full_name') for repo in repos if repo.get('full_name')}
@@ -647,12 +580,12 @@ class GitHubAPIClient:
                     repos.append(hardcoded_repo)
                     seen_repos.add(hardcoded_repo.get('full_name'))
             
-            # Sort all repos by stars descending
+            # Sort by stars descending
             repos.sort(key=lambda r: r.get('stargazers_count', 0), reverse=True)
             
             logger.info(f"Total repos after merging: {len(repos)} (including {len(hardcoded_valid)} hardcoded)")
-            
             return repos[:limit]
+            
         except Exception as e:
             logger.warning(f"Code search failed: {e}")
             return []

@@ -9,6 +9,41 @@ import os
 from github_api import GitHubAPIClient
 
 
+def _validate_github_token(token: str) -> tuple[bool, str, str, str]:
+    """
+    Validate GitHub token format and extract OAuth credentials if needed.
+    
+    Returns:
+        Tuple of (is_oauth, refresh_token, client_id, client_secret)
+    """
+    is_oauth = token.startswith('ghu_')
+    is_pat = token.startswith(('ghp_', 'gho_', 'github_pat_'))
+    
+    if not (is_oauth or is_pat):
+        raise ValueError(
+            "GITHUB_ACCESS_TOKEN appears invalid (wrong format). "
+            "Expected to start with 'ghp_', 'gho_', 'github_pat_', or 'ghu_'"
+        )
+    
+    if not is_oauth:
+        return False, None, None, None
+    
+    # OAuth token - get credentials
+    refresh_token = os.getenv('GITHUB_REFRESH_TOKEN')
+    client_id = os.getenv('GITHUB_CLIENT_ID')
+    client_secret = os.getenv('GITHUB_CLIENT_SECRET')
+    
+    # Warn about missing credentials
+    if not refresh_token:
+        print("⚠️  WARNING: Using OAuth token without GITHUB_REFRESH_TOKEN")
+        print("   OAuth tokens expire after 8 hours. Set GITHUB_REFRESH_TOKEN for auto-renewal.")
+    elif not client_id or not client_secret:
+        print("⚠️  WARNING: GITHUB_REFRESH_TOKEN is set but GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is missing")
+        print("   Token refresh will fail. Set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.")
+    
+    return True, refresh_token, client_id, client_secret
+
+
 async def init_connections():
     """
     Initialize shared GitHub API client and database connection pool with error handling.
@@ -25,49 +60,35 @@ async def init_connections():
     if not github_access_token:
         raise ValueError("GITHUB_ACCESS_TOKEN environment variable is required")
     
-    # Detect token type and validate format
-    is_oauth_token = github_access_token.startswith('ghu_')
-    is_pat_token = github_access_token.startswith(('ghp_', 'gho_', 'github_pat_'))
-    
-    if not (is_oauth_token or is_pat_token):
-        raise ValueError(f"GITHUB_ACCESS_TOKEN appears invalid (wrong format). "
-                        f"Expected to start with 'ghp_', 'gho_', 'github_pat_', or 'ghu_'")
-    
-    # Get OAuth-specific credentials if using OAuth token
-    github_refresh_token = os.getenv('GITHUB_REFRESH_TOKEN') if is_oauth_token else None
-    github_client_id = os.getenv('GITHUB_CLIENT_ID') if is_oauth_token else None
-    github_client_secret = os.getenv('GITHUB_CLIENT_SECRET') if is_oauth_token else None
-    
-    # Warn if OAuth token is used without refresh credentials
-    if is_oauth_token and not github_refresh_token:
-        print("⚠️  WARNING: Using OAuth token without GITHUB_REFRESH_TOKEN")
-        print("   OAuth tokens expire after 8 hours. Set GITHUB_REFRESH_TOKEN for auto-renewal.")
-    
-    if is_oauth_token and github_refresh_token and (not github_client_id or not github_client_secret):
-        print("⚠️  WARNING: GITHUB_REFRESH_TOKEN is set but GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is missing")
-        print("   Token refresh will fail. Set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.")
+    _, refresh_token, client_id, client_secret = _validate_github_token(github_access_token)
     
     # Initialize GitHub API client
     try:
         github_api = GitHubAPIClient(
             access_token=github_access_token,
-            refresh_token=github_refresh_token,
-            client_id=github_client_id,
-            client_secret=github_client_secret
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret
         )
         await github_api.__aenter__()
     except Exception as e:
         raise ConnectionError(f"Failed to initialize GitHub API client: {e}")
     
-    # Validate database URL
+    # Initialize database connection pool
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         raise ValueError("DATABASE_URL environment variable is required")
-    # Initialize database connection pool with retry logic
+    
+    db_pool = await _init_database_pool(database_url)
+    return github_api, db_pool
+
+
+async def _init_database_pool(database_url: str) -> asyncpg.Pool:
+    """Initialize database connection pool with retry logic."""
     pool_size_min = int(os.getenv('DATABASE_POOL_MIN_SIZE', '2'))
     pool_size_max = int(os.getenv('DATABASE_POOL_MAX_SIZE', '10'))
-    
     max_retries = 3
+    
     for attempt in range(max_retries):
         try:
             db_pool = await asyncpg.create_pool(
@@ -82,26 +103,22 @@ async def init_connections():
             async with db_pool.acquire() as conn:
                 await conn.fetchval('SELECT 1')
             
-            return github_api, db_pool
+            return db_pool
             
-        except (asyncpg.InvalidPasswordError, asyncpg.InvalidCatalogNameError, 
-                asyncpg.CannotConnectNowError, Exception) as e:
-            # Handle specific database errors
-            match type(e).__name__:
-                case 'InvalidPasswordError':
-                    raise ConnectionError("Database authentication failed (wrong password)")
-                case 'InvalidCatalogNameError':
-                    raise ConnectionError("Database does not exist")
-                case 'CannotConnectNowError':
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2 ** attempt)
-                        continue
-                    raise ConnectionError("Database connection refused (server not accepting connections)")
-                case _:
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2 ** attempt)
-                        continue
-                    raise ConnectionError(f"Failed to create database connection pool: {e}")
+        except asyncpg.InvalidPasswordError:
+            raise ConnectionError("Database authentication failed (wrong password)")
+        except asyncpg.InvalidCatalogNameError:
+            raise ConnectionError("Database does not exist")
+        except asyncpg.CannotConnectNowError:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            raise ConnectionError("Database connection refused (server not accepting connections)")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            raise ConnectionError(f"Failed to create database connection pool: {e}")
     
     raise ConnectionError("Failed to connect after 3 attempts")
 

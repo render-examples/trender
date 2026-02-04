@@ -18,6 +18,31 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 
+def _verify_token(token: str) -> bool:
+    """Verify token by making a test API call."""
+    import requests
+    
+    print("\n🔍 Verifying token...")
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    try:
+        response = requests.get('https://api.github.com/user', headers=headers)
+        if response.status_code == 200:
+            username = response.json().get('login', 'Unknown')
+            print(f"✅ Token verified! Authenticated as: {username}")
+            return True
+        
+        print(f"⚠️  Warning: Token verification failed (HTTP {response.status_code})")
+        print(f"   Response: {response.text}")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not verify token: {str(e)}")
+    
+    return input("Continue anyway? (y/N): ").strip().lower() == 'y'
+
+
 def setup_pat():
     """Guide user through Personal Access Token (PAT) setup."""
     print("=" * 70)
@@ -38,9 +63,7 @@ def setup_pat():
     print("     ✓ read:org (Read org and team membership)\n")
     
     print("3. Click 'Generate token' at the bottom of the page\n")
-    
     print("4. Copy the token (starts with 'ghp_' or 'github_pat_')\n")
-    
     print("⚠️  IMPORTANT: Save this token securely - you won't see it again!\n")
     print("=" * 70)
     
@@ -52,37 +75,10 @@ def setup_pat():
     
     if not (token.startswith('ghp_') or token.startswith('github_pat_')):
         print("\n⚠️  Warning: Token doesn't match expected format (ghp_* or github_pat_*)")
-        confirm = input("Continue anyway? (y/N): ").strip().lower()
-        if confirm != 'y':
+        if input("Continue anyway? (y/N): ").strip().lower() != 'y':
             return None
     
-    # Verify token works by making a simple API call
-    print("\n🔍 Verifying token...")
-    import requests
-    headers = {
-        'Authorization': f'token {token}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
-    
-    try:
-        response = requests.get('https://api.github.com/user', headers=headers)
-        if response.status_code == 200:
-            user_data = response.json()
-            username = user_data.get('login', 'Unknown')
-            print(f"✅ Token verified! Authenticated as: {username}")
-        else:
-            print(f"⚠️  Warning: Token verification failed (HTTP {response.status_code})")
-            print(f"   Response: {response.text}")
-            confirm = input("Continue anyway? (y/N): ").strip().lower()
-            if confirm != 'y':
-                return None
-    except Exception as e:
-        print(f"⚠️  Warning: Could not verify token: {str(e)}")
-        confirm = input("Continue anyway? (y/N): ").strip().lower()
-        if confirm != 'y':
-            return None
-    
-    return token
+    return token if _verify_token(token) else None
 
 
 # OAuth callback handler (from original oauth_setup.py)
@@ -150,6 +146,20 @@ def get_access_token_from_code(client_id, client_secret, code):
     }
 
 
+def _start_oauth_server(port: int) -> HTTPServer:
+    """Start local OAuth callback server."""
+    try:
+        return HTTPServer(('localhost', port), OAuthCallbackHandler)
+    except OSError as e:
+        if 'Address already in use' in str(e):
+            print(f"\n❌ Error: Port {port} is already in use.")
+            print(f"   Run: lsof -ti:{port} | xargs kill -9")
+            print("   Then try again.\n")
+        else:
+            print(f"\n❌ Error: {str(e)}\n")
+        return None
+
+
 def setup_oauth():
     """Guide user through OAuth App setup."""
     print("=" * 70)
@@ -181,15 +191,8 @@ def setup_oauth():
     callback_url = f"http://localhost:{callback_port}/callback"
     
     print(f"1. Starting local callback server on port {callback_port}...")
-    try:
-        server = HTTPServer(('localhost', callback_port), OAuthCallbackHandler)
-    except OSError as e:
-        if 'Address already in use' in str(e):
-            print(f"\n❌ Error: Port {callback_port} is already in use.")
-            print(f"   Run: lsof -ti:{callback_port} | xargs kill -9")
-            print("   Then try again.\n")
-        else:
-            print(f"\n❌ Error: {str(e)}\n")
+    server = _start_oauth_server(callback_port)
+    if not server:
         return None
     
     # Step 2: Open browser for authorization
@@ -231,25 +234,48 @@ def setup_oauth():
     
     # Verify the token works
     print("6. Verifying OAuth token...")
-    import requests
-    headers = {
-        'Authorization': f'token {token_data["access_token"]}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
-    
-    try:
-        response = requests.get('https://api.github.com/user', headers=headers)
-        if response.status_code == 200:
-            user_data = response.json()
-            username = user_data.get('login', 'Unknown')
-            print(f"✅ OAuth token verified! Authenticated as: {username}")
-        else:
-            print(f"⚠️  Warning: Token verification failed (HTTP {response.status_code})")
-            print(f"   Response: {response.text}")
-    except Exception as e:
-        print(f"⚠️  Warning: Could not verify token: {str(e)}")
+    _verify_token(token_data['access_token'])
     
     return token_data
+
+
+def _print_env_instructions(token: str, refresh_token: str, method: str):
+    """Print environment variable setup instructions."""
+    print("\n📝 Next Steps:\n")
+    print("1. Add this to your .env file:")
+    print(f"   GITHUB_ACCESS_TOKEN={token}")
+    
+    if refresh_token:
+        print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
+        if method == 'OAuth':
+            print(f"   GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+            print(f"   GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
+    
+    print("\n2. Add the same tokens to your Render Dashboard:")
+    print("   - Go to your workflow service (trender-wf)")
+    print("   - Navigate to Environment tab")
+    print(f"   - Add: GITHUB_ACCESS_TOKEN={token}")
+    
+    if refresh_token:
+        print(f"   - Add: GITHUB_REFRESH_TOKEN={refresh_token}")
+        if method == 'OAuth':
+            print(f"   - Add: GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+            print(f"   - Add: GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
+    
+    print("\n3. Deploy your workflow and trigger a run!")
+
+
+def _print_security_reminder(method: str):
+    """Print security reminders."""
+    print("\n⚠️  Security Reminder:")
+    print("   - Never commit these tokens to version control")
+    print("   - Store them securely (they're like passwords)")
+    
+    if method == 'PAT':
+        print("   - Revoke access at: https://github.com/settings/tokens")
+    else:
+        print("   - Revoke access at: https://github.com/settings/applications")
+        print("   - OAuth tokens auto-refresh when GITHUB_REFRESH_TOKEN is set")
 
 
 def main():
@@ -273,18 +299,13 @@ def main():
         case '1':
             method = 'PAT'
             result = setup_pat()
-            if result:
-                token = result
-                refresh_token = None
+            token = result
+            refresh_token = None
         case '2':
             method = 'OAuth'
             result = setup_oauth()
-            if result:
-                token = result.get('access_token')
-                refresh_token = result.get('refresh_token')
-            else:
-                token = None
-                refresh_token = None
+            token = result.get('access_token') if result else None
+            refresh_token = result.get('refresh_token') if result else None
         case _:
             print("\n❌ Invalid choice. Please run the script again and select 1 or 2.")
             sys.exit(1)
@@ -305,41 +326,9 @@ def main():
         print("   The refresh token allows automatic renewal.\n")
     
     print("=" * 70)
-    print("\n📝 Next Steps:\n")
-    print("1. Add this to your .env file:")
-    print(f"   GITHUB_ACCESS_TOKEN={token}")
-    
-    if refresh_token:
-        print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
-        if method == 'OAuth':
-            GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
-            GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
-            print(f"   GITHUB_CLIENT_ID={GITHUB_CLIENT_ID}")
-            print(f"   GITHUB_CLIENT_SECRET={GITHUB_CLIENT_SECRET}")
-    
-    print("\n2. Add the same tokens to your Render Dashboard:")
-    print("   - Go to your workflow service (trender-wf)")
-    print("   - Navigate to Environment tab")
-    print(f"   - Add: GITHUB_ACCESS_TOKEN={token}")
-    
-    if refresh_token:
-        print(f"   - Add: GITHUB_REFRESH_TOKEN={refresh_token}")
-        if method == 'OAuth':
-            GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
-            GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
-            print(f"   - Add: GITHUB_CLIENT_ID={GITHUB_CLIENT_ID}")
-            print(f"   - Add: GITHUB_CLIENT_SECRET={GITHUB_CLIENT_SECRET}")
-    
-    print("\n3. Deploy your workflow and trigger a run!")
+    _print_env_instructions(token, refresh_token, method)
     print("=" * 70)
-    print("\n⚠️  Security Reminder:")
-    print("   - Never commit these tokens to version control")
-    print("   - Store them securely (they're like passwords)")
-    if method == 'PAT':
-        print("   - Revoke access at: https://github.com/settings/tokens")
-    else:
-        print("   - Revoke access at: https://github.com/settings/applications")
-        print("   - OAuth tokens auto-refresh when GITHUB_REFRESH_TOKEN is set")
+    _print_security_reminder(method)
     print("=" * 70)
 
 
