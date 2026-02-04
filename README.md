@@ -1,6 +1,10 @@
-# Trender: GitHub Trending Analytics Platform
+# [trender.onrender.com](https://trender.onrender.com/)
 
 A distributed analytics platform that tracks trending GitHub repositories across Python, TypeScript/Next.js, Go, and the Render ecosystem. Uses Render Workflows for parallel processing and a 3-layer data pipeline (Raw → Staging → Analytics) for high-performance analytics.
+
+## Demo
+
+https://github.com/user-attachments/assets/ba79db68-fc73-4508-9d90-0f4abcf050a7
 
 ## 🎯 Quick start
 
