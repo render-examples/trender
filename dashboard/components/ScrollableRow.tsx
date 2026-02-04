@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useLayoutEffect } from 'react'
 import Image from 'next/image'
 import { LayoutGroup } from 'framer-motion'
 import { Repository } from '@/lib/db'
@@ -13,7 +13,8 @@ interface ScrollableRowProps {
   repos: Repository[]
   icon?: string
   selectedRepo: Repository | null
-  onCardClick: (repo: Repository) => void
+  selectedIndex: number | null
+  onCardClick: (repo: Repository, index: number) => void
   onClosePanel: () => void
 }
 
@@ -55,9 +56,9 @@ const generatePlaceholderRepos = (count: number, language: string): Repository[]
   }))
 }
 
-export default function ScrollableRow({ title, repos, icon, selectedRepo, onCardClick, onClosePanel }: ScrollableRowProps) {
+export default function ScrollableRow({ title, repos, icon, selectedRepo, selectedIndex, onCardClick, onClosePanel }: ScrollableRowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const savedScrollPositionRef = useRef(0)
   
   // Fill with placeholders if we have fewer than 25 repos
   const displayRepos = repos.length > 0 
@@ -67,28 +68,18 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
   // Triple the repos for infinite scrolling
   const infiniteRepos = [...displayRepos, ...displayRepos, ...displayRepos]
 
-  // Reset selectedIndex when selectedRepo becomes null (closed from another section)
-  useEffect(() => {
-    if (!selectedRepo) {
-      setSelectedIndex(null)
-    }
-  }, [selectedRepo])
-
-  // Handle card click
+  // Handle card click - save scroll position
   const handleCardClick = (repo: Repository, index: number) => {
-    // If clicking the same card (by index), deselect it
-    if (selectedIndex === index) {
-      onClosePanel()
-      setSelectedIndex(null)
-    } else {
-      onCardClick(repo)
-      setSelectedIndex(index)
+    if (scrollContainerRef.current) {
+      savedScrollPositionRef.current = scrollContainerRef.current.scrollLeft
     }
+    onCardClick(repo, index)
   }
 
+  // Infinite scroll: disable when panel is open to prevent position jumps
   useEffect(() => {
     const container = scrollContainerRef.current
-    if (!container) return
+    if (!container || selectedRepo) return
 
     const handleScroll = () => {
       const { scrollLeft, scrollWidth, clientWidth } = container
@@ -105,12 +96,45 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
     }
 
     container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [infiniteRepos, selectedRepo])
+
+  // Set initial scroll position on mount
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || container.scrollLeft !== 0) return
     
     // Start in the middle set
     container.scrollLeft = (container.scrollWidth / 3)
-
-    return () => container.removeEventListener('scroll', handleScroll)
   }, [infiniteRepos])
+
+  // Preserve scroll position when opening/closing panel
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    
+    if (!selectedRepo) {
+      // Closing: Save and restore position to prevent snap-back
+      savedScrollPositionRef.current = container.scrollLeft
+      Promise.resolve().then(() => {
+        if (container) {
+          container.scrollLeft = savedScrollPositionRef.current
+        }
+      })
+    }
+  }, [selectedRepo])
+  
+  // Ensure position is maintained after animation completes
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    
+    const timer = setTimeout(() => {
+      container.scrollLeft = savedScrollPositionRef.current
+    }, selectedRepo ? 400 : 300)
+    
+    return () => clearTimeout(timer)
+  }, [selectedRepo])
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -172,7 +196,7 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
                   <RepoCard 
                     key={`${repo.repo_full_name}-${index}`} 
                     repo={repo}
-                    isSelected={selectedIndex === index}
+                    isSelected={selectedRepo?.repo_full_name === repo.repo_full_name && index === selectedIndex}
                     onCardClick={() => handleCardClick(repo, index)}
                   />
                 ))
@@ -183,7 +207,7 @@ export default function ScrollableRow({ title, repos, icon, selectedRepo, onCard
       </div>
 
       {/* README Panel - outside the cards row container */}
-      {selectedRepo && selectedIndex !== null && (
+      {selectedRepo && (
         <ReadmePanel 
           repo={selectedRepo}
           onClose={onClosePanel}
