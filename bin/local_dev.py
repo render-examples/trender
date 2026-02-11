@@ -240,17 +240,137 @@ def trigger_workflow() -> subprocess.Popen:
     return process
 
 
+def sanitize_output_line(line: str) -> str:
+    """
+    Sanitize a line of output by removing/replacing problematic characters.
+    
+    Args:
+        line: Raw line from subprocess output
+        
+    Returns:
+        Sanitized line safe for terminal display
+    """
+    import re
+    import unicodedata
+    
+    # Remove control characters except newline, tab, and carriage return
+    # Control characters can cause terminal issues
+    sanitized = ''.join(
+        char if char in ('\n', '\t', '\r') or not unicodedata.category(char).startswith('C')
+        else '?'
+        for char in line
+    )
+    
+    # Replace any remaining non-printable or problematic unicode
+    # This catches edge cases that might slip through
+    sanitized = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '?', sanitized)
+    
+    # Truncate extremely long lines (likely data dumps)
+    max_line_length = 1000
+    if len(sanitized) > max_line_length:
+        sanitized = sanitized[:max_line_length] + "... (truncated)\n"
+    
+    return sanitized
+
+
+def should_display_line(line: str) -> bool:
+    """
+    Determine if a line should be displayed in terminal output.
+    Filters out README content and other non-essential data dumps.
+    
+    Args:
+        line: Line to check
+        
+    Returns:
+        True if line should be displayed, False otherwise
+    """
+    # Skip empty lines
+    if not line or not line.strip():
+        return True
+    
+    # Skip extremely long lines (these are usually data dumps)
+    if len(line) > 1000:
+        return False
+    
+    # README detection heuristics - look for markdown patterns
+    readme_patterns = [
+        r'^#{1,6}\s',  # Markdown headers (# ## ### etc)
+        r'```',  # Code fences
+        r'img\.shields\.io',  # Badge URLs
+        r'badge\.svg',  # Badge images
+        r'\[!\[',  # Badge markdown syntax
+        r'^\|\s+\w+\s+\|',  # Markdown tables
+        r'^[-*]\s+\*\*',  # Markdown lists with bold
+        r'<div align=',  # HTML div alignment (common in READMEs)
+        r'<picture>',  # Picture tags
+        r'<img src=',  # Image tags
+        r'!\[.*\]\(.*\)',  # Markdown image syntax
+    ]
+    
+    import re
+    for pattern in readme_patterns:
+        if re.search(pattern, line, re.IGNORECASE):
+            return False
+    
+    # Filter lines with excessive special characters (likely README content)
+    special_char_count = sum(1 for c in line if not c.isalnum() and not c.isspace())
+    if special_char_count > len(line) * 0.4:  # More than 40% special characters
+        return False
+    
+    # Keep structured log lines (they usually have timestamps, log levels, etc.)
+    # These patterns indicate legitimate log output
+    log_patterns = [
+        r'\d{4}-\d{2}-\d{2}',  # Date pattern
+        r'\d{2}:\d{2}:\d{2}',  # Time pattern
+        r'\b(INFO|DEBUG|WARNING|ERROR|CRITICAL)\b',  # Log levels
+        r'\[SERVER\]',  # Our server prefix
+        r'\[TRIGGER\]',  # Our trigger prefix
+        r'Task\s+(Completed|Started)',  # Task status
+        r'Workflow\s+(started|completed|triggered)',  # Workflow status
+        r'Fetching|Processing|Loading|Analyzing',  # Action verbs from our logs
+    ]
+    
+    for pattern in log_patterns:
+        if re.search(pattern, line, re.IGNORECASE):
+            return True
+    
+    # If line is reasonably short and doesn't match README patterns, display it
+    return len(line) < 500
+
+
 def stream_process_output(process: subprocess.Popen, prefix: str):
     """
-    Stream output from a subprocess with a prefix
+    Stream output from a subprocess with a prefix.
+    Filters and sanitizes output to prevent README content and special characters
+    from causing terminal issues.
     
     Args:
         process: Subprocess to stream from
         prefix: Prefix for log lines
     """
+    readme_warning_shown = False
+    
     try:
         for line in process.stdout:
-            print(f"{prefix} {line}", end="")
+            try:
+                # Sanitize the line first
+                sanitized = sanitize_output_line(line)
+                
+                # Check if line should be displayed
+                if should_display_line(sanitized):
+                    print(f"{prefix} {sanitized}", end="")
+                elif not readme_warning_shown:
+                    # Show a one-time warning about filtered content
+                    print(f"{prefix} ... (README content filtered) ...", flush=True)
+                    readme_warning_shown = True
+                    
+            except UnicodeDecodeError as e:
+                # Handle encoding errors gracefully
+                print(f"{prefix} [Encoding error: {e}]", flush=True)
+            except Exception as e:
+                # Catch any other line-processing errors
+                print(f"{prefix} [Error processing line: {e}]", flush=True)
+                
     except Exception as e:
         print_error(f"Error streaming output: {e}")
 
