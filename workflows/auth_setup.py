@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 # Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 
 def _verify_token(token: str) -> bool:

@@ -34,8 +34,9 @@ import requests
 PROJECT_ROOT = Path(__file__).parent.parent
 ENV_PATH = PROJECT_ROOT / '.env'
 
-# Load environment variables from .env
-load_dotenv(dotenv_path=ENV_PATH)
+# Load environment variables from .env (override=True ensures .env always wins
+# over any stale values already exported in the shell environment)
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 
 class Colors:

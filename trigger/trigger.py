@@ -10,9 +10,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from render_sdk.client import Client
 
-# Load .env file from parent directory
+# Load .env file from parent directory (override=True ensures .env always wins
+# over any stale values already exported in the shell environment)
 env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 
 async def trigger_workflow():
