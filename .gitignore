@@ -18,6 +18,8 @@ lib/
 lib64/
 # Exception: Allow dashboard/lib (TypeScript library code)
 !dashboard/lib/
+# Exception: Allow workflows/lib (Python utility modules)
+!workflows/lib/
 parts/
 sdist/
 var/
