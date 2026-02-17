@@ -12,7 +12,7 @@ import asyncpg
 from render_sdk.workflows import task
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
-from utils import init_connections_with_error_handling
+from utils import init_connections_with_error_handling, fetch_readmes_parallel
 from etl import store_raw_repos
 from tasks.batch_analysis import analyze_repo_batch
 
@@ -75,17 +75,7 @@ async def fetch_language_repos(language: str) -> Dict:
             }
 
         # Fetch READMEs in parallel (much faster!)
-        readme_contents = {}
-        readme_tasks = []
-        for repo in repos_to_process:
-            owner, name = repo.get('full_name', '/').split('/')
-            readme_tasks.append(github_api.fetch_readme(owner, name))
-
-        readme_results = await asyncio.gather(*readme_tasks, return_exceptions=True)
-        for i, repo in enumerate(repos_to_process):
-            if not isinstance(readme_results[i], Exception) and readme_results[i]:
-                readme_contents[repo.get('full_name')] = readme_results[i]
-
+        readme_contents = await fetch_readmes_parallel(repos_to_process, github_api)
         logger.info(f"Fetched {len(readme_contents)} READMEs for {language}")
 
         # Store raw API responses with READMEs
@@ -152,17 +142,7 @@ async def fetch_render_repos() -> Dict:
         logger.info(f"Processing {len(repos_to_process)} render projects (target={target_count})")
 
         # Fetch READMEs in parallel (same as language repos)
-        readme_contents = {}
-        readme_tasks = []
-        for repo in repos_to_process:
-            owner, name = repo.get('full_name', '/').split('/')
-            readme_tasks.append(github_api.fetch_readme(owner, name))
-
-        readme_results = await asyncio.gather(*readme_tasks, return_exceptions=True)
-        for i, repo in enumerate(repos_to_process):
-            if not isinstance(readme_results[i], Exception) and readme_results[i]:
-                readme_contents[repo.get('full_name')] = readme_results[i]
-
+        readme_contents = await fetch_readmes_parallel(repos_to_process, github_api)
         logger.info(f"Fetched {len(readme_contents)} READMEs for render repos")
 
         # Store in raw layer with READMEs
