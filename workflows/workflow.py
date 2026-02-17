@@ -3,20 +3,20 @@ Trender Main Workflow
 Orchestrates the GitHub trending analytics pipeline using Render Workflows.
 """
 
+# CRITICAL: Add workflows directory to Python path FIRST, before any local imports
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from render_sdk.workflows import task, start
 import asyncio
 import asyncpg
-import os
-import sys
 import logging
 import traceback
 import uuid
 import json
 from datetime import datetime, timedelta, date, timezone
 from typing import Dict, List, Optional
-
-# Ensure the workflows directory is in the Python path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient

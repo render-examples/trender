@@ -3,9 +3,13 @@ Shared Resource Management
 Handles initialization and cleanup of shared resources like GitHub API client and database pool.
 """
 
+import os
+import sys
+# Ensure workflows directory is in path for local imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import asyncpg
 import asyncio
-import os
 import logging
 from github_api import GitHubAPIClient
 from lib.oauth_manager import OAuthCredentialManager
