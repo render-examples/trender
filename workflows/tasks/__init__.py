@@ -1,7 +1,7 @@
 """
 Workflow task definitions.
 
-All @task decorated functions for the Render Workflows system.
+All @app.task decorated functions for the Render Workflows system.
 """
 
 from tasks.main_task import main_analysis_task

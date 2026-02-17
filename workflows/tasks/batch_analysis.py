@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 import asyncpg
 
-from render_sdk.workflows import task
+from app import app
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
 from utils import chunk_list
@@ -81,7 +81,7 @@ async def process_repo_batch_chunk(
     return handle_batch_errors(batch, batch_results)
 
 
-@task
+@app.task
 async def analyze_repo_batch(repos: List[Dict], readme_contents: Dict[str, str] = None) -> Dict:
     """
     Analyze a batch of repositories with detailed metrics.

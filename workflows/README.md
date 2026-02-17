@@ -121,7 +121,8 @@ momentum_score = (recency_score * 0.7) + (normalized_stars * 0.3)
 
 | File | Purpose |
 |------|---------|
-| `workflow.py` | Main workflow with @task decorators |
+| `workflow.py` | Main workflow entry point; holds the `app` instance and calls `app.start()` |
+| `app.py` | Shared `Workflows` app instance (imported by all task modules) |
 | `github_api.py` | Async GitHub API client (search, fetch) |
 | `connections.py` | Shared resource management (DB pool, HTTP session) |
 | `auth_setup.py` | Interactive GitHub auth token generator |

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 import asyncpg
 
-from render_sdk.workflows import task
+from app import app
 from connections import init_connections, cleanup_connections
 from github_api import GitHubAPIClient
 from utils import init_connections_with_error_handling, fetch_readmes_parallel
@@ -23,7 +23,7 @@ DEV_MODE = os.getenv('DEV_MODE', 'false').lower() == 'true'
 DEV_REPO_LIMIT = int(os.getenv('DEV_REPO_LIMIT', '50'))
 
 
-@task
+@app.task
 async def fetch_language_repos(language: str) -> Dict:
     """
     Fetch and store trending repos for a specific language.
@@ -98,7 +98,7 @@ async def fetch_language_repos(language: str) -> Dict:
         await cleanup_connections(github_api, db_pool)
 
 
-@task
+@app.task
 async def fetch_render_repos() -> Dict:
     """
     Fetch independent Render projects using code search.

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Dict, List
 import asyncpg
 
-from render_sdk.workflows import task
+from app import app
 from connections import cleanup_connections
 from utils import WorkflowTrace, init_connections_with_error_handling, process_task_result, add_task_to_trace
 from etl import aggregate_results
@@ -118,7 +118,7 @@ async def finalize_workflow_on_error(trace: WorkflowTrace, error: Exception) -> 
         pass
 
 
-@task
+@app.task
 async def main_analysis_task() -> Dict:
     """
     Main orchestrator task for the entire analysis workflow.

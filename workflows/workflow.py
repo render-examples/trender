@@ -11,9 +11,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Render SDK
-from render_sdk.workflows import start
+from app import app
 
-# Import all @task decorated functions to register them with Render Workflows
+# Import all @app.task decorated functions to register them with the Workflows app
 # These imports are required even though they appear unused - they register the tasks
 from tasks.main_task import main_analysis_task
 from tasks.language_tasks import fetch_language_repos, fetch_render_repos
@@ -41,4 +41,4 @@ if __name__ == "__main__":
     logger.info("Starting Render Workflows task server...")
     logger.info(f"Registered tasks: main_analysis_task, fetch_language_repos, fetch_render_repos, analyze_repo_batch")
     logger.info(f"DEV_MODE: {DEV_MODE}, Target languages: {TARGET_LANGUAGES}")
-    start()
+    app.start()
