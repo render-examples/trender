@@ -29,23 +29,23 @@ def _ensure_encryption_key() -> str:
     encryption_key = os.getenv('GITHUB_TOKEN_ENCRYPTION_KEY')
 
     if encryption_key:
-        print(f"✓ GITHUB_TOKEN_ENCRYPTION_KEY already configured")
+        print("✓ GITHUB_TOKEN_ENCRYPTION_KEY already configured")
         return encryption_key
 
-    print("\n🔐 Generating encryption key for secure token storage...")
+    print("\nGenerating encryption key for secure token storage...")
     encryption_key = Fernet.generate_key().decode('utf-8')
 
     # Save to .env file
     try:
         set_key(env_path, 'GITHUB_TOKEN_ENCRYPTION_KEY', encryption_key)
-        print(f"✅ Encryption key generated and saved to .env")
+        print("✓ Encryption key generated and saved to .env")
 
         # Reload environment to pick up the new key
         load_dotenv(dotenv_path=env_path, override=True)
     except Exception as e:
-        print(f"⚠️  Warning: Could not save to .env file: {e}")
-        print(f"   Please add this line to your .env file manually:")
-        print(f"   GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}\n")
+        print(f"⚠ Warning: Could not save to .env file: {e}")
+        print(f"  Please add this line to your .env file manually:")
+        print(f"  GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}\n")
 
     return encryption_key
 
@@ -53,25 +53,25 @@ def _ensure_encryption_key() -> str:
 def _verify_token(token: str) -> bool:
     """Verify token by making a test API call."""
     import requests
-    
-    print("\n🔍 Verifying token...")
+
+    print("\nVerifying token...")
     headers = {
         'Authorization': f'token {token}',
         'Accept': 'application/vnd.github.v3+json'
     }
-    
+
     try:
         response = requests.get('https://api.github.com/user', headers=headers)
         if response.status_code == 200:
             username = response.json().get('login', 'Unknown')
-            print(f"✅ Token verified! Authenticated as: {username}")
+            print(f"✓ Token verified - authenticated as: {username}")
             return True
-        
-        print(f"⚠️  Warning: Token verification failed (HTTP {response.status_code})")
-        print(f"   Response: {response.text}")
+
+        print(f"⚠ Warning: Token verification failed (HTTP {response.status_code})")
+        print(f"  Response: {response.text}")
     except Exception as e:
-        print(f"⚠️  Warning: Could not verify token: {str(e)}")
-    
+        print(f"⚠ Warning: Could not verify token: {str(e)}")
+
     return input("Continue anyway? (y/N): ").strip().lower() == 'y'
 
 
@@ -80,36 +80,29 @@ def setup_pat():
     print("=" * 70)
     print("Personal Access Token (PAT) Setup - Recommended")
     print("=" * 70)
-    print("\nThis is the simplest authentication method. You'll create a token")
-    print("directly from GitHub settings.\n")
-    
-    print("📋 Step-by-Step Instructions:\n")
-    print("1. Open this URL in your browser:")
-    print("   https://github.com/settings/tokens/new\n")
-    
-    print("2. Fill in the token details:")
+    print("\nSimplest authentication method - create token from GitHub settings.\n")
+
+    print("Steps:")
+    print("1. Open: https://github.com/settings/tokens/new")
+    print("2. Configure token:")
     print("   - Note: 'Trender Analytics Access'")
-    print("   - Expiration: 'No expiration' (or choose your preference)")
-    print("   - Select scopes:")
-    print("     ✓ repo (Full control of private repositories)")
-    print("     ✓ read:org (Read org and team membership)\n")
-    
-    print("3. Click 'Generate token' at the bottom of the page\n")
-    print("4. Copy the token (starts with 'ghp_' or 'github_pat_')\n")
-    print("⚠️  IMPORTANT: Save this token securely - you won't see it again!\n")
+    print("   - Expiration: 'No expiration' (recommended)")
+    print("   - Scopes: repo, read:org")
+    print("3. Generate token and copy it (starts with ghp_ or github_pat_)")
+    print("\n⚠ IMPORTANT: Save token securely - it won't be shown again")
     print("=" * 70)
-    
+
     token = input("\nPaste your Personal Access Token here: ").strip()
-    
+
     if not token:
-        print("\n❌ Error: No token provided.")
+        print("\n✗ Error: No token provided")
         return None
-    
+
     if not (token.startswith('ghp_') or token.startswith('github_pat_')):
-        print("\n⚠️  Warning: Token doesn't match expected format (ghp_* or github_pat_*)")
+        print("\n⚠ Warning: Token doesn't match expected format (ghp_* or github_pat_*)")
         if input("Continue anyway? (y/N): ").strip().lower() != 'y':
             return None
-    
+
     return token if _verify_token(token) else None
 
 
@@ -184,11 +177,11 @@ def _start_oauth_server(port: int) -> HTTPServer:
         return HTTPServer(('localhost', port), OAuthCallbackHandler)
     except OSError as e:
         if 'Address already in use' in str(e):
-            print(f"\n❌ Error: Port {port} is already in use.")
-            print(f"   Run: lsof -ti:{port} | xargs kill -9")
-            print("   Then try again.\n")
+            print(f"\n✗ Error: Port {port} is already in use")
+            print(f"  Run: lsof -ti:{port} | xargs kill -9")
+            print("  Then try again\n")
         else:
-            print(f"\n❌ Error: {str(e)}\n")
+            print(f"\n✗ Error: {str(e)}\n")
         return None
 
 
@@ -199,16 +192,16 @@ async def _save_credentials_to_db(token_data: dict):
 
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
-        print("\n⚠️  Warning: DATABASE_URL not set, skipping database seeding")
-        print("   Credentials will only be available as environment variables")
+        print("\n⚠ Warning: DATABASE_URL not set, skipping database seeding")
+        print("  Credentials will only be available as environment variables")
         return False
 
     encryption_key = os.getenv('GITHUB_TOKEN_ENCRYPTION_KEY')
     if not encryption_key:
-        print("\n⚠️  Warning: GITHUB_TOKEN_ENCRYPTION_KEY not set, skipping database seeding")
-        print("   Generate one with:")
-        print('   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"')
-        print("   Then add it to your .env file and Render dashboard")
+        print("\n⚠ Warning: GITHUB_TOKEN_ENCRYPTION_KEY not set, skipping database seeding")
+        print("  Generate one with:")
+        print('  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"')
+        print("  Then add it to your .env file and Render dashboard")
         return False
 
     try:
@@ -227,12 +220,12 @@ async def _save_credentials_to_db(token_data: dict):
         )
 
         await db_pool.close()
-        print("✅ Credentials saved to database successfully!")
+        print("✓ Credentials saved to database successfully")
         return True
 
     except Exception as e:
-        print(f"\n⚠️  Warning: Failed to save credentials to database: {e}")
-        print("   Credentials will only be available as environment variables")
+        print(f"\n⚠ Warning: Failed to save credentials to database: {e}")
+        print("  Credentials will only be available as environment variables")
         return False
 
 
@@ -248,7 +241,7 @@ def setup_oauth():
     GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
 
     if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
-        print("❌ Error: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set in .env")
+        print("✗ Error: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set in .env")
         print("\nTo set up OAuth App:")
         print("1. Go to https://github.com/settings/developers")
         print("2. Click 'New OAuth App'")
@@ -287,10 +280,10 @@ def setup_oauth():
 
     global authorization_code
     if not authorization_code:
-        print("\n❌ Error: No authorization code received.")
+        print("\n✗ Error: No authorization code received")
         return None
 
-    print("4. Authorization code received!")
+    print("4. Authorization code received")
 
     # Step 4: Exchange code for access token using OAuth2Session
     print("5. Exchanging code for access token...")
@@ -302,7 +295,7 @@ def setup_oauth():
     )
 
     if not token_data or not token_data.get('access_token'):
-        print("\n❌ Error: Failed to get access token.")
+        print("\n✗ Error: Failed to get access token")
         return None
 
     # Verify the token works
@@ -316,71 +309,74 @@ def setup_oauth():
     return token_data
 
 
+def _print_oauth_db_instructions(token: str, refresh_token: str, encryption_key: str):
+    """Print instructions for OAuth with database setup."""
+    print("✓ Credentials saved to database - auto-refresh enabled")
+    print("\nRequired for Render:")
+    print(f"   GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+    print(f"   GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
+    print(f"   GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}")
+    print(f"   DATABASE_URL=<your-database-url>")
+    print("\nOptional (for initial seed):")
+    print(f"   GITHUB_ACCESS_TOKEN={token}")
+    print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
+    print("\n   After first run, tokens auto-refresh from DB")
+
+
+def _print_manual_setup_instructions(token: str, refresh_token: str, method: str, encryption_key: str):
+    """Print instructions for manual environment setup."""
+    print("Local .env configured:")
+    print(f"   ✓ GITHUB_ACCESS_TOKEN={token[:20]}...")
+    if encryption_key:
+        print(f"   ✓ GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key[:20]}...")
+    if refresh_token:
+        print(f"   ✓ GITHUB_REFRESH_TOKEN={refresh_token[:20]}...")
+        if method == 'OAuth':
+            print(f"   ✓ GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+            print(f"   ✓ GITHUB_CLIENT_SECRET={'*' * 20}")
+
+    print("\nAdd to Render Dashboard (Environment):")
+    print(f"   GITHUB_ACCESS_TOKEN={token}")
+    if encryption_key:
+        print(f"   GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}")
+    if refresh_token:
+        print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
+        if method == 'OAuth':
+            print(f"   GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+            print(f"   GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
+
+
 def _print_env_instructions(token: str, refresh_token: str, method: str):
     """Print environment variable setup instructions."""
     encryption_key = os.getenv('GITHUB_TOKEN_ENCRYPTION_KEY')
-
-    print("\n📝 Next Steps:\n")
+    print("\nNext Steps:\n")
 
     if method == 'OAuth' and os.getenv('DATABASE_URL') and encryption_key:
-        print("✅ Credentials saved to database! They will automatically refresh.")
-        print("\n1. Required environment variables for Render (one-time setup):")
-        print(f"   GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
-        print(f"   GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
-        print(f"   GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}")
-        print(f"   DATABASE_URL=<your-database-url>")
-        print("\n2. Optional (for initial seed on first Render run):")
-        print(f"   GITHUB_ACCESS_TOKEN={token}")
-        print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
-        print("\n   Note: After first run, tokens auto-refresh from DB. You can remove")
-        print("   GITHUB_ACCESS_TOKEN and GITHUB_REFRESH_TOKEN from Render dashboard.")
+        _print_oauth_db_instructions(token, refresh_token, encryption_key)
     else:
-        print("1. Environment variables configured in .env:")
-        print(f"   ✓ GITHUB_ACCESS_TOKEN={token[:20]}...")
+        _print_manual_setup_instructions(token, refresh_token, method, encryption_key)
 
-        if encryption_key:
-            print(f"   ✓ GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key[:20]}...")
-
-        if refresh_token:
-            print(f"   ✓ GITHUB_REFRESH_TOKEN={refresh_token[:20]}...")
-            if method == 'OAuth':
-                print(f"   ✓ GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
-                print(f"   ✓ GITHUB_CLIENT_SECRET={'*' * 20}")
-
-        print("\n2. Add these to your Render Dashboard (trender-wf service > Environment):")
-        print(f"   GITHUB_ACCESS_TOKEN={token}")
-
-        if encryption_key:
-            print(f"   GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}")
-
-        if refresh_token:
-            print(f"   GITHUB_REFRESH_TOKEN={refresh_token}")
-            if method == 'OAuth':
-                print(f"   GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
-                print(f"   GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
-
-    print("\n3. Deploy your workflow and trigger a run!")
+    print("\nDeploy your workflow and trigger a run!")
 
 
 def _print_security_reminder(method: str):
     """Print security reminders."""
-    print("\n⚠️  Security Reminder:")
-    print("   - Never commit these tokens to version control")
-    print("   - Store them securely (they're like passwords)")
-    
+    print("\n⚠ Security Reminder:")
+    print("  - Never commit these tokens to version control")
+    print("  - Store them securely (they're like passwords)")
+
     if method == 'PAT':
-        print("   - Revoke access at: https://github.com/settings/tokens")
+        print("  - Revoke access at: https://github.com/settings/tokens")
     else:
-        print("   - Revoke access at: https://github.com/settings/applications")
-        print("   - OAuth tokens auto-refresh when GITHUB_REFRESH_TOKEN is set")
+        print("  - Revoke access at: https://github.com/settings/applications")
+        print("  - OAuth tokens auto-refresh when GITHUB_REFRESH_TOKEN is set")
 
 
 def main():
     """Main authentication setup flow."""
-    print("\n")
-    print("╔════════════════════════════════════════════════════════════════════╗")
-    print("║         GitHub Authentication Setup for Trender Analytics         ║")
-    print("╚════════════════════════════════════════════════════════════════════╝")
+    print("\n" + "=" * 70)
+    print("GitHub Authentication Setup for Trender Analytics")
+    print("=" * 70)
 
     # Ensure encryption key exists (required for OAuth credential management)
     print("\n" + "=" * 70)
