@@ -42,84 +42,93 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 class Colors:
     """ANSI color codes for terminal output"""
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BLUE = '\033[94m'
     ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+
+
+def print_message(message: str, msg_type: str = 'info', prefix: str = '') -> None:
+    """Print a colored message with optional prefix."""
+    colors = {
+        'success': Colors.GREEN,
+        'error': Colors.RED,
+        'warning': Colors.YELLOW,
+        'info': Colors.BLUE,
+        'header': Colors.BLUE
+    }
+    color = colors.get(msg_type, '')
+    output = sys.stderr if msg_type == 'error' else sys.stdout
+    full_message = f"{prefix}{message}" if prefix else message
+    print(f"{color}{full_message}{Colors.ENDC}", file=output)
 
 
 def print_header(message: str):
     """Print a colored header message"""
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{'='*80}{Colors.ENDC}")
-    print(f"{Colors.HEADER}{Colors.BOLD}{message}{Colors.ENDC}")
-    print(f"{Colors.HEADER}{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
+    print_message(f"\n{'='*80}\n{message}\n{'='*80}\n", 'header')
 
 
 def print_success(message: str):
     """Print a success message"""
-    print(f"{Colors.OKGREEN}✓ {message}{Colors.ENDC}")
+    print_message(f"✓ {message}", 'success')
 
 
 def print_error(message: str):
     """Print an error message"""
-    print(f"{Colors.FAIL}✗ {message}{Colors.ENDC}", file=sys.stderr)
+    print_message(f"✗ {message}", 'error')
 
 
 def print_info(message: str):
     """Print an info message"""
-    print(f"{Colors.OKCYAN}ℹ {message}{Colors.ENDC}")
+    print_message(f"ℹ {message}", 'info')
 
 
 def print_warning(message: str):
     """Print a warning message"""
-    print(f"{Colors.WARNING}⚠ {message}{Colors.ENDC}")
+    print_message(f"⚠ {message}", 'warning')
 
 
-def validate_environment():
-    """Validate required environment variables"""
-    print_header("Validating Environment")
-    
-    required_vars = {
-        'DATABASE_URL': 'PostgreSQL connection string',
-        'GITHUB_ACCESS_TOKEN': 'GitHub API access token',
-        'RENDER_API_KEY': 'Render API key (for triggering)',
-        'RENDER_WORKFLOW_SLUG': 'Render workflow slug',
-    }
-    
-    missing_vars = []
-    
-    # Define placeholder patterns for each variable type
+def _is_placeholder_value(var_name: str, value: str) -> bool:
+    """Check if an environment variable value is a placeholder."""
+    if not value:
+        return True
+
     placeholder_patterns = {
         'DATABASE_URL': ['postgresql://username:password@host', 'postgresql://user:pass@localhost'],
         'GITHUB_ACCESS_TOKEN': ['ghp_your_access_token_here', 'github_pat_your'],
         'RENDER_API_KEY': ['rnd_your_render_api_key_here'],
         'RENDER_WORKFLOW_SLUG': ['your_workflow_slug_here', 'trender-wf-example'],
     }
-    
+
+    patterns = placeholder_patterns.get(var_name, [])
+    for pattern in patterns:
+        if value.startswith(pattern) or value == pattern:
+            return True
+
+    return False
+
+
+def validate_environment():
+    """Validate required environment variables"""
+    print_header("Validating Environment")
+
+    required_vars = {
+        'DATABASE_URL': 'PostgreSQL connection string',
+        'GITHUB_ACCESS_TOKEN': 'GitHub API access token',
+        'RENDER_API_KEY': 'Render API key (for triggering)',
+        'RENDER_WORKFLOW_SLUG': 'Render workflow slug',
+    }
+
+    missing_vars = []
+
     for var, description in required_vars.items():
         value = os.getenv(var)
-        
-        # Check if value is missing or is a placeholder
-        is_placeholder = False
-        if not value:
-            is_placeholder = True
-        elif var in placeholder_patterns:
-            # Check if value matches any placeholder pattern for this variable
-            for pattern in placeholder_patterns[var]:
-                if value.startswith(pattern) or value == pattern:
-                    is_placeholder = True
-                    break
-        
-        if is_placeholder:
+
+        if _is_placeholder_value(var, value):
             print_error(f"{var} not configured ({description})")
             missing_vars.append(var)
         else:
-            # Show partial value for security
             display_value = value[:10] + '...' if len(value) > 10 else value
             print_success(f"{var} = {display_value}")
     
@@ -153,12 +162,41 @@ def validate_environment():
     return True
 
 
+def _handle_oauth_token_expiration() -> bool:
+    """Handle expired OAuth token by checking refresh credentials. Returns True if recoverable."""
+    has_refresh = bool(os.getenv('GITHUB_REFRESH_TOKEN'))
+    has_client_id = bool(os.getenv('GITHUB_CLIENT_ID'))
+    has_client_secret = bool(os.getenv('GITHUB_CLIENT_SECRET'))
+
+    if has_refresh and has_client_id and has_client_secret:
+        print_info(
+            "OAuth refresh credentials are configured — the workflow will attempt auto-refresh.\n"
+            "  If that fails, re-authorize with:  cd workflows && python auth_setup.py"
+        )
+        return True
+
+    missing = [
+        v for v, present in [
+            ('GITHUB_REFRESH_TOKEN', has_refresh),
+            ('GITHUB_CLIENT_ID', has_client_id),
+            ('GITHUB_CLIENT_SECRET', has_client_secret),
+        ] if not present
+    ]
+    print_error(
+        f"OAuth refresh credentials missing ({', '.join(missing)}).\n"
+        "  Cannot auto-renew expired tokens. To fix either:\n"
+        "  • Re-authorize:  python workflows/auth_setup.py\n"
+        "  • Or switch to a Personal Access Token (PAT) which doesn't expire"
+    )
+    return False
+
+
 def validate_github_token(token: str) -> bool:
     """
     Validate that the GitHub token is functional by making a test API call.
-    
+
     For OAuth tokens (ghu_), also warns about expiration and missing refresh credentials.
-    
+
     Returns:
         True if token is valid, False if expired/invalid
     """
@@ -200,36 +238,15 @@ def validate_github_token(token: str) -> bool:
         
         elif response.status_code == 401:
             print_error("GitHub token is EXPIRED or INVALID (401 Unauthorized)")
-            
+
             if is_oauth:
-                has_refresh = bool(os.getenv('GITHUB_REFRESH_TOKEN'))
-                has_client_id = bool(os.getenv('GITHUB_CLIENT_ID'))
-                has_client_secret = bool(os.getenv('GITHUB_CLIENT_SECRET'))
-                
-                if has_refresh and has_client_id and has_client_secret:
-                    print_info(
-                        "OAuth refresh credentials are configured — the workflow will attempt auto-refresh.\n"
-                        "  If that fails, re-authorize with:  cd workflows && python auth_setup.py"
-                    )
-                else:
-                    missing = [v for v, present in [
-                        ('GITHUB_REFRESH_TOKEN', has_refresh),
-                        ('GITHUB_CLIENT_ID', has_client_id),
-                        ('GITHUB_CLIENT_SECRET', has_client_secret),
-                    ] if not present]
-                    print_error(
-                        f"OAuth refresh credentials missing ({', '.join(missing)}).\n"
-                        "  Cannot auto-renew expired tokens. To fix either:\n"
-                        "  • Re-authorize:  python workflows/auth_setup.py\n"
-                        "  • Or switch to a Personal Access Token (PAT) which doesn't expire"
-                    )
+                return _handle_oauth_token_expiration()
             else:
                 print_info(
                     "Generate a new token at: https://github.com/settings/tokens/new\n"
                     "  Required scopes: repo, read:org"
                 )
-            
-            return False
+                return False
         
         elif response.status_code == 403:
             print_error(
@@ -580,15 +597,15 @@ def main():
         if args.server_only:
             # Server-only mode: just stream server logs
             print_info("Running in server-only mode. Press Ctrl+C to stop.")
-            stream_process_output(server_process, f"{Colors.OKBLUE}[SERVER]{Colors.ENDC}")
+            stream_process_output(server_process, "[SERVER]")
         elif args.trigger_only:
             # Trigger-only mode
             trigger_process = trigger_workflow()
-            stream_process_output(trigger_process, f"{Colors.OKGREEN}[TRIGGER]{Colors.ENDC}")
-            
+            stream_process_output(trigger_process, "[TRIGGER]")
+
             # Wait for trigger to complete
             trigger_process.wait()
-            
+
             if trigger_process.returncode == 0:
                 print_success("\nWorkflow triggered successfully!")
             else:
@@ -596,17 +613,17 @@ def main():
         else:
             # Full mode: run both server and trigger
             trigger_process = trigger_workflow()
-            
+
             # Stream output from trigger first (it's quick)
-            stream_process_output(trigger_process, f"{Colors.OKGREEN}[TRIGGER]{Colors.ENDC}")
+            stream_process_output(trigger_process, "[TRIGGER]")
             trigger_process.wait()
-            
+
             if trigger_process.returncode == 0:
                 print_success("\nWorkflow triggered! Now streaming task server logs...")
                 print_info("Press Ctrl+C to stop the server\n")
-                
+
                 # Stream server logs
-                stream_process_output(server_process, f"{Colors.OKBLUE}[SERVER]{Colors.ENDC}")
+                stream_process_output(server_process, "[SERVER]")
             else:
                 print_error(f"\nTrigger failed with code {trigger_process.returncode}")
     
