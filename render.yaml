@@ -22,8 +22,6 @@ services:
     rootDir: workflows
     buildCommand: pip install -r requirements.txt
     envVars:
-      - key: PYTHONPATH
-        value: /opt/render/project/src/workflows
       - key: DATABASE_URL
         fromDatabase:
           name: trender-db
