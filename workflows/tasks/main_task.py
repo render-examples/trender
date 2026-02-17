@@ -41,23 +41,26 @@ async def run_dev_mode_pipeline(trace: WorkflowTrace, execution_start: datetime)
     logger.info("Python task completed, starting ETL pipeline")
 
     github_api, db_pool = await init_connections_with_error_handling()
-    aggregate_task = trace.add_task('aggregate_results')
-    final_result = await aggregate_results([python_result], db_pool, execution_start, trace)
-    trace.complete_task(aggregate_task)
+    try:
+        aggregate_task = trace.add_task('aggregate_results')
+        final_result = await aggregate_results([python_result], db_pool, execution_start, trace)
+        trace.complete_task(aggregate_task)
 
-    execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
-    logger.info(f"DEV_MODE workflow completed in {execution_time}s")
+        execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
+        logger.info(f"DEV_MODE workflow completed in {execution_time}s")
 
-    trace.repos_processed = final_result.get('repos_processed', 0)
-    trace.complete('completed')
-    await trace.persist(db_pool)
+        trace.repos_processed = final_result.get('repos_processed', 0)
+        trace.complete('completed')
+        await trace.persist(db_pool)
 
-    final_result.update({
-        'dev_mode': True,
-        'languages': ['Python'],
-        'trace_id': trace.run_id
-    })
-    return final_result
+        final_result.update({
+            'dev_mode': True,
+            'languages': ['Python'],
+            'trace_id': trace.run_id
+        })
+        return final_result
+    finally:
+        await cleanup_connections(github_api, db_pool)
 
 
 async def run_production_pipeline(trace: WorkflowTrace, execution_start: datetime) -> Dict:
@@ -84,15 +87,18 @@ async def run_production_pipeline(trace: WorkflowTrace, execution_start: datetim
 
     # Aggregate and store final results
     github_api, db_pool = await init_connections_with_error_handling()
-    aggregate_task = trace.add_task('aggregate_results')
-    final_result = await aggregate_results(results, db_pool, execution_start, trace)
-    trace.complete_task(aggregate_task)
+    try:
+        aggregate_task = trace.add_task('aggregate_results')
+        final_result = await aggregate_results(results, db_pool, execution_start, trace)
+        trace.complete_task(aggregate_task)
 
-    trace.repos_processed = final_result.get('repos_processed', 0)
-    trace.complete('completed')
-    await trace.persist(db_pool)
-    final_result['trace_id'] = trace.run_id
-    return final_result
+        trace.repos_processed = final_result.get('repos_processed', 0)
+        trace.complete('completed')
+        await trace.persist(db_pool)
+        final_result['trace_id'] = trace.run_id
+        return final_result
+    finally:
+        await cleanup_connections(github_api, db_pool)
 
 
 async def finalize_workflow_on_error(trace: WorkflowTrace, error: Exception) -> None:
@@ -130,10 +136,6 @@ async def main_analysis_task() -> Dict:
     trace = WorkflowTrace()
     logger.info(f"Workflow trace initialized: {trace.run_id}")
 
-    # Track db_pool for cleanup
-    db_pool = None
-    github_api = None
-
     try:
         if DEV_MODE:
             result = await run_dev_mode_pipeline(trace, execution_start)
@@ -143,20 +145,7 @@ async def main_analysis_task() -> Dict:
         return result
 
     except Exception as e:
-        # Mark trace as failed and persist
+        # Mark trace as failed
         trace.complete('failed', error_message=str(e))
-        try:
-            # Try to get db_pool if available
-            if db_pool is not None:
-                await trace.persist(db_pool)
-        except Exception:
-            pass
+        logger.error(f"Workflow failed: {e}")
         raise
-
-    finally:
-        # Cleanup if connections were initialized
-        try:
-            if github_api is not None and db_pool is not None:
-                await cleanup_connections(github_api, db_pool)
-        except Exception:
-            pass  # Connections may not have been initialized if error occurred early

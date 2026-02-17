@@ -46,6 +46,7 @@ class GitHubAPIClient:
         self.oauth_manager = oauth_manager
         self.base_url = "https://api.github.com"
         self.session: Optional[aiohttp.ClientSession] = None
+        self.connector: Optional[aiohttp.TCPConnector] = None
         self.rate_limit_remaining = 5000
         self.rate_limit_reset = None
         self.is_oauth_token = access_token.startswith('ghu_') if access_token else False
@@ -57,9 +58,9 @@ class GitHubAPIClient:
 
     async def __aenter__(self):
         # Use TCPConnector with force_close for proper cleanup
-        connector = aiohttp.TCPConnector(force_close=True)
+        self.connector = aiohttp.TCPConnector(force_close=True)
         self.session = aiohttp.ClientSession(
-            connector=connector,
+            connector=self.connector,
             headers={
                 'Authorization': f'token {self.access_token}',
                 'Accept': 'application/vnd.github.v3+json'
@@ -71,11 +72,13 @@ class GitHubAPIClient:
         await self.close()
 
     async def close(self):
-        """Close the HTTP session."""
+        """Close the HTTP session and connector."""
         if self.session:
             await self.session.close()
-            # Small delay to allow pending operations to complete
-            await asyncio.sleep(0.1)
+        if self.connector:
+            await self.connector.close()
+        # Small delay to allow pending operations to complete
+        await asyncio.sleep(0.25)
 
     async def _handle_response_status(self, response: aiohttp.ClientResponse, url: str, 
                                       attempt: int, retry_count: int) -> tuple[bool, Optional[dict]]:
