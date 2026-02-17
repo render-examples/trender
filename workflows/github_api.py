@@ -159,13 +159,26 @@ class GitHubAPIClient:
         if response.status == 403:
             error_msg = await response.text()
             error_lower = error_msg.lower()
-            if 'rate limit' in error_lower:
-                logger.error("GitHub rate limit exceeded")
+            if 'rate limit' in error_lower or 'abuse' in error_lower:
+                # Respect Retry-After header if present, otherwise use exponential backoff
+                retry_after = response.headers.get('Retry-After')
+                if retry_after:
+                    wait_time = int(retry_after)
+                else:
+                    wait_time = min(5 * (2 ** attempt), 60)  # 5s, 10s, 20s, 40s, 60s cap
+                
+                if attempt < retry_count - 1:
+                    logger.warning(f"GitHub rate limit hit, retrying in {wait_time}s (attempt {attempt + 1}/{retry_count})")
+                    await asyncio.sleep(wait_time)
+                    return (True, None)
+                else:
+                    logger.error(f"GitHub rate limit exceeded after {retry_count} attempts")
+                    return (False, None)
             elif 'insufficient' in error_lower:
                 logger.error("GitHub token has insufficient scopes")
+                return (False, None)
             else:
                 raise aiohttp.ClientError(f"GitHub API 403: {error_msg}")
-            return (False, None)
         
         if response.status == 422:
             logger.error(f"GitHub API invalid query: {url}")
@@ -188,9 +201,12 @@ class GitHubAPIClient:
             logger.error("Failed to parse GitHub API JSON response")
             return (False, None)
 
-    async def _api_call(self, url: str, retry_count: int = 3) -> dict:
+    async def _api_call(self, url: str, retry_count: int = 5) -> dict:
         """
         Make API call with rate limiting, retry logic, and automatic token refresh.
+        
+        Uses 5 retries by default to handle GitHub's secondary rate limits
+        when multiple tasks hit the Search API concurrently.
         
         Returns:
             JSON response or None if error

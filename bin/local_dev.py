@@ -27,6 +27,7 @@ import time
 import signal
 import argparse
 from pathlib import Path
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import requests
 
@@ -143,7 +144,136 @@ def validate_environment():
         return False
     
     print_success("\nAll required environment variables are configured!")
+    
+    # Validate GitHub token is actually working
+    github_token = os.getenv('GITHUB_ACCESS_TOKEN', '')
+    if not validate_github_token(github_token):
+        return False
+    
     return True
+
+
+def validate_github_token(token: str) -> bool:
+    """
+    Validate that the GitHub token is functional by making a test API call.
+    
+    For OAuth tokens (ghu_), also warns about expiration and missing refresh credentials.
+    
+    Returns:
+        True if token is valid, False if expired/invalid
+    """
+    print_header("Validating GitHub Token")
+    
+    is_oauth = token.startswith('ghu_')
+    is_pat = token.startswith(('ghp_', 'github_pat_'))
+    
+    if is_oauth:
+        print_info("Token type: OAuth App token (ghu_) — expires 8 hours after creation")
+    elif is_pat:
+        print_info("Token type: Personal Access Token (PAT) — no expiration")
+    else:
+        print_warning(f"Token type: Unknown prefix ({token[:4]}...)")
+    
+    # Test the token with a lightweight API call
+    try:
+        response = requests.get(
+            'https://api.github.com/user',
+            headers={
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            user_data = response.json()
+            username = user_data.get('login', 'unknown')
+            remaining = response.headers.get('X-RateLimit-Remaining', '?')
+            limit = response.headers.get('X-RateLimit-Limit', '?')
+            
+            print_success(f"Token valid — authenticated as {username} (rate limit: {remaining}/{limit})")
+            
+            if is_oauth:
+                _check_oauth_refresh_credentials()
+            
+            return True
+        
+        elif response.status_code == 401:
+            print_error("GitHub token is EXPIRED or INVALID (401 Unauthorized)")
+            
+            if is_oauth:
+                has_refresh = bool(os.getenv('GITHUB_REFRESH_TOKEN'))
+                has_client_id = bool(os.getenv('GITHUB_CLIENT_ID'))
+                has_client_secret = bool(os.getenv('GITHUB_CLIENT_SECRET'))
+                
+                if has_refresh and has_client_id and has_client_secret:
+                    print_info(
+                        "OAuth refresh credentials are configured — the workflow will attempt auto-refresh.\n"
+                        "  If that fails, re-authorize with:  cd workflows && python auth_setup.py"
+                    )
+                else:
+                    missing = [v for v, present in [
+                        ('GITHUB_REFRESH_TOKEN', has_refresh),
+                        ('GITHUB_CLIENT_ID', has_client_id),
+                        ('GITHUB_CLIENT_SECRET', has_client_secret),
+                    ] if not present]
+                    print_error(
+                        f"OAuth refresh credentials missing ({', '.join(missing)}).\n"
+                        "  Cannot auto-renew expired tokens. To fix either:\n"
+                        "  • Re-authorize:  python workflows/auth_setup.py\n"
+                        "  • Or switch to a Personal Access Token (PAT) which doesn't expire"
+                    )
+            else:
+                print_info(
+                    "Generate a new token at: https://github.com/settings/tokens/new\n"
+                    "  Required scopes: repo, read:org"
+                )
+            
+            return False
+        
+        elif response.status_code == 403:
+            print_error(
+                "GitHub token returned 403 Forbidden — "
+                "may indicate rate limiting or insufficient scopes (need: repo, read:org)"
+            )
+            return False
+        
+        else:
+            print_warning(f"Unexpected GitHub API response: HTTP {response.status_code}")
+            return True  # Don't block on unexpected responses
+    
+    except requests.Timeout:
+        print_warning("GitHub API timed out (10s) — proceeding anyway")
+        return True
+    
+    except requests.ConnectionError:
+        print_warning("Cannot reach GitHub API — check internet connection. Proceeding anyway")
+        return True
+    
+    except Exception as e:
+        print_warning(f"Error validating GitHub token: {e}")
+        return True
+
+
+def _check_oauth_refresh_credentials():
+    """Check if OAuth refresh credentials are configured and warn if not."""
+    has_refresh = bool(os.getenv('GITHUB_REFRESH_TOKEN'))
+    has_client_id = bool(os.getenv('GITHUB_CLIENT_ID'))
+    has_client_secret = bool(os.getenv('GITHUB_CLIENT_SECRET'))
+    
+    if has_refresh and has_client_id and has_client_secret:
+        print_success("OAuth auto-refresh credentials configured")
+    else:
+        missing = [v for v, present in [
+            ('GITHUB_REFRESH_TOKEN', has_refresh),
+            ('GITHUB_CLIENT_ID', has_client_id),
+            ('GITHUB_CLIENT_SECRET', has_client_secret),
+        ] if not present]
+        print_warning(
+            f"OAuth auto-refresh NOT configured (missing: {', '.join(missing)}).\n"
+            "  Token will expire after 8 hours with no way to auto-renew.\n"
+            "  Add refresh credentials to .env or switch to a PAT (ghp_) token."
+        )
 
 
 def wait_for_server(url: str, timeout: int = 3) -> bool:
