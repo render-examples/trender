@@ -6,7 +6,11 @@ Handles initialization and cleanup of shared resources like GitHub API client an
 import asyncpg
 import asyncio
 import os
+import logging
 from github_api import GitHubAPIClient
+from lib.oauth_manager import OAuthCredentialManager
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_github_token(token: str) -> tuple[bool, str, str, str]:
@@ -47,39 +51,83 @@ def _validate_github_token(token: str) -> tuple[bool, str, str, str]:
 async def init_connections():
     """
     Initialize shared GitHub API client and database connection pool with error handling.
-    
+
     Returns:
-        Tuple of (GitHubAPIClient, asyncpg.Pool)
-        
+        Tuple of (GitHubAPIClient, asyncpg.Pool, Optional[OAuthCredentialManager])
+
     Raises:
         ValueError: If required environment variables are missing
         ConnectionError: If connections cannot be established
     """
-    # Validate GitHub token
-    github_access_token = os.getenv('GITHUB_ACCESS_TOKEN')
+    # Initialize database connection pool FIRST (needed for OAuth credential manager)
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is required")
+
+    db_pool = await _init_database_pool(database_url)
+
+    # Try to use OAuth credential manager if encryption key is set
+    oauth_manager = None
+    github_access_token = None
+    refresh_token = None
+    client_id = None
+    client_secret = None
+
+    encryption_key = os.getenv('GITHUB_TOKEN_ENCRYPTION_KEY')
+    if encryption_key:
+        try:
+            logger.info("Attempting to load GitHub credentials from database...")
+            oauth_manager = OAuthCredentialManager(db_pool)
+            credentials_loaded = await oauth_manager.load_credentials()
+
+            if credentials_loaded:
+                # Use credentials from database
+                logger.info("✅ Loaded GitHub credentials from database")
+                github_access_token = await oauth_manager.get_valid_token()
+            else:
+                # No credentials in DB - try to seed from env vars
+                logger.info("No credentials in database, checking environment variables for initial seed...")
+                env_access_token = os.getenv('GITHUB_ACCESS_TOKEN')
+                env_refresh_token = os.getenv('GITHUB_REFRESH_TOKEN')
+
+                if env_access_token and env_refresh_token:
+                    logger.info("Seeding database with credentials from environment variables...")
+                    # Save to DB for future runs
+                    await oauth_manager.save_credentials(
+                        access_token=env_access_token,
+                        refresh_token=env_refresh_token
+                    )
+                    github_access_token = env_access_token
+                    logger.info("✅ Seeded database with initial credentials")
+                else:
+                    logger.warning("No credentials in DB or environment - OAuth manager will not be used")
+                    oauth_manager = None
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize OAuth manager: {e}. Falling back to env var tokens.")
+            oauth_manager = None
+
+    # Fallback to environment variable tokens if OAuth manager not available
     if not github_access_token:
-        raise ValueError("GITHUB_ACCESS_TOKEN environment variable is required")
-    
-    _, refresh_token, client_id, client_secret = _validate_github_token(github_access_token)
-    
+        github_access_token = os.getenv('GITHUB_ACCESS_TOKEN')
+        if not github_access_token:
+            raise ValueError("GITHUB_ACCESS_TOKEN environment variable is required")
+
+        _, refresh_token, client_id, client_secret = _validate_github_token(github_access_token)
+
     # Initialize GitHub API client
     try:
         github_api = GitHubAPIClient(
             access_token=github_access_token,
             refresh_token=refresh_token,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            oauth_manager=oauth_manager
         )
         await github_api.__aenter__()
     except Exception as e:
         raise ConnectionError(f"Failed to initialize GitHub API client: {e}")
-    
-    # Initialize database connection pool
-    database_url = os.getenv('DATABASE_URL')
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable is required")
-    
-    db_pool = await _init_database_pool(database_url)
+
     return github_api, db_pool
 
 

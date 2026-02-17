@@ -32,6 +32,12 @@
 \echo 'Creating Workflow Traces tables...'
 \i schema/05_workflow_traces.sql
 
+-- ====================================
+-- OAUTH CREDENTIALS
+-- ====================================
+\echo 'Creating OAuth Credentials table...'
+\i schema/06_oauth_credentials.sql
+
 \echo ''
 \echo '=========================================='
 \echo 'Database initialization complete!'
@@ -65,5 +71,8 @@
 \echo 'WORKFLOW TRACES (1 table):'
 \echo '  - fact_workflow_runs: Execution traces with task timing'
 \echo ''
-\echo 'Total: 10 tables + 6 views'
+\echo 'OAUTH CREDENTIALS (1 table):'
+\echo '  - github_oauth_credentials: Encrypted GitHub OAuth tokens'
+\echo ''
+\echo 'Total: 11 tables + 6 views'
 \echo ''

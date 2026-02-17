@@ -26,8 +26,19 @@ services:
         fromDatabase:
           name: trender-db
           property: connectionString
+      # GitHub OAuth Credentials (one-time setup)
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_TOKEN_ENCRYPTION_KEY
+        sync: false
+      # GitHub Tokens (optional - used for initial DB seed on first run)
       - key: GITHUB_ACCESS_TOKEN
         sync: false
+      - key: GITHUB_REFRESH_TOKEN
+        sync: false
+      # Development Settings
       - key: DEV_MODE
         value: false
       - key: DEV_REPO_LIMIT

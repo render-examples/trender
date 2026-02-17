@@ -19,39 +19,39 @@ RENDER_REPOS_PER_PAGE = 100  # Number of results to fetch when searching for ren
 
 class GitHubAPIClient:
     """Async GitHub API client with token authentication.
-    
+
     Supports both OAuth App tokens and Personal Access Tokens (PAT).
-    OAuth tokens are automatically refreshed when they expire.
+    OAuth tokens are automatically refreshed when they expire via OAuthCredentialManager.
     """
 
-    def __init__(self, access_token: str, refresh_token: str = None, 
-                 client_id: str = None, client_secret: str = None):
+    def __init__(self, access_token: str, refresh_token: str = None,
+                 client_id: str = None, client_secret: str = None,
+                 oauth_manager=None):
         """
         Initialize GitHub API client with a GitHub access token.
-        
+
         Args:
             access_token: GitHub access token - can be either:
                          - Personal Access Token (PAT) from GitHub settings (starts with ghp_ or github_pat_)
                          - OAuth token from OAuth App flow (starts with ghu_)
-            refresh_token: OAuth refresh token (required for OAuth token auto-refresh)
-            client_id: GitHub OAuth App client ID (required for token refresh)
-            client_secret: GitHub OAuth App client secret (required for token refresh)
+            refresh_token: OAuth refresh token (optional, for legacy compatibility)
+            client_id: GitHub OAuth App client ID (optional, for legacy compatibility)
+            client_secret: GitHub OAuth App client secret (optional, for legacy compatibility)
+            oauth_manager: Optional OAuthCredentialManager for handling token refresh
         """
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.client_id = client_id or os.getenv('GITHUB_CLIENT_ID')
         self.client_secret = client_secret or os.getenv('GITHUB_CLIENT_SECRET')
+        self.oauth_manager = oauth_manager
         self.base_url = "https://api.github.com"
         self.session: Optional[aiohttp.ClientSession] = None
         self.rate_limit_remaining = 5000
         self.rate_limit_reset = None
-        self.token_expires_at: Optional[datetime] = None
         self.is_oauth_token = access_token.startswith('ghu_') if access_token else False
-        
-        # Set token expiration for OAuth tokens (8 hours from now)
+
         if self.is_oauth_token:
-            self.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
-            logger.info(f"OAuth token detected, expires at {self.token_expires_at.isoformat()}")
+            logger.info("OAuth token detected (managed by OAuthCredentialManager)")
         else:
             logger.info("PAT token detected (no expiration)")
 
@@ -69,81 +69,6 @@ class GitHubAPIClient:
         """Close the HTTP session."""
         if self.session:
             await self.session.close()
-    
-    async def _refresh_oauth_token(self) -> bool:
-        """
-        Refresh the OAuth access token using the refresh token.
-        
-        Returns:
-            True if refresh was successful, False otherwise
-        """
-        if not self.refresh_token:
-            logger.error("Cannot refresh token: no refresh_token provided")
-            return False
-        
-        if not self.client_id or not self.client_secret:
-            logger.error("Cannot refresh token: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set")
-            return False
-        
-        logger.info("Refreshing OAuth token...")
-        
-        url = "https://github.com/login/oauth/access_token"
-        data = {
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'grant_type': 'refresh_token',
-            'refresh_token': self.refresh_token
-        }
-        headers = {'Accept': 'application/json'}
-        
-        try:
-            async with self.session.post(url, data=data, headers=headers) as response:
-                if response.status != 200:
-                    logger.error(f"Token refresh failed (HTTP {response.status}): {await response.text()}")
-                    return False
-                
-                result = await response.json()
-                new_access_token = result.get('access_token')
-                
-                if not new_access_token:
-                    logger.error(f"Token refresh failed: no access_token in response: {result}")
-                    return False
-                
-                # Update tokens and expiration
-                self.access_token = new_access_token
-                self.refresh_token = result.get('refresh_token') or self.refresh_token
-                self.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=result.get('expires_in', 28800))
-                
-                # Update session headers
-                if self.session:
-                    self.session.headers.update({'Authorization': f'token {self.access_token}'})
-                
-                logger.info(f"✅ OAuth token refreshed! Expires: {self.token_expires_at.isoformat()}")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Token refresh failed with exception: {e}")
-            return False
-    
-    async def _ensure_valid_token(self) -> bool:
-        """
-        Ensure the access token is valid, refreshing if necessary.
-        
-        Returns:
-            True if token is valid, False if refresh failed
-        """
-        # PAT tokens don't expire
-        if not self.is_oauth_token:
-            return True
-        
-        # Check if OAuth token is expired or about to expire (within 5 minutes)
-        if self.token_expires_at:
-            time_until_expiry = self.token_expires_at - datetime.now(timezone.utc)
-            if time_until_expiry.total_seconds() < 300:  # Less than 5 minutes
-                logger.warning(f"OAuth token expires in {time_until_expiry.total_seconds():.0f}s, refreshing...")
-                return await self._refresh_oauth_token()
-        
-        return True
 
     async def _handle_response_status(self, response: aiohttp.ClientResponse, url: str, 
                                       attempt: int, retry_count: int) -> tuple[bool, Optional[dict]]:
@@ -204,47 +129,45 @@ class GitHubAPIClient:
     async def _api_call(self, url: str, retry_count: int = 5) -> dict:
         """
         Make API call with rate limiting, retry logic, and automatic token refresh.
-        
+
         Uses 5 retries by default to handle GitHub's secondary rate limits
         when multiple tasks hit the Search API concurrently.
-        
+
         Returns:
             JSON response or None if error
         """
-        # Ensure token is valid before making the call
-        if not await self._ensure_valid_token():
-            logger.error("Cannot make API call: token is invalid and refresh failed")
-            return None
-        
         # Check rate limit and sleep if needed
         if self.rate_limit_remaining < 100 and self.rate_limit_reset:
             sleep_duration = max(self.rate_limit_reset - datetime.now(timezone.utc).timestamp(), 0)
             if sleep_duration > 0:
                 logger.warning(f"Rate limit low, sleeping {sleep_duration}s")
                 await asyncio.sleep(sleep_duration + 5)
-        
+
         for attempt in range(retry_count):
             try:
                 async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     # Update rate limit info
                     self.rate_limit_remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
                     self.rate_limit_reset = int(response.headers.get('X-RateLimit-Reset', 0))
-                    
+
                     # Handle 401 Unauthorized - token may have expired
-                    if response.status == 401 and self.is_oauth_token:
-                        logger.warning("Received 401 Unauthorized - attempting token refresh")
-                        if await self._refresh_oauth_token():
+                    if response.status == 401 and self.oauth_manager:
+                        logger.warning("Received 401 Unauthorized - delegating to OAuthCredentialManager")
+                        if await self.oauth_manager.handle_401_error():
+                            # Get refreshed token and update session
+                            self.access_token = await self.oauth_manager.get_valid_token()
+                            self.session.headers.update({'Authorization': f'token {self.access_token}'})
                             logger.info("Token refreshed, retrying request...")
                             continue
                         logger.error("Token refresh failed, cannot continue")
                         return None
-                    
+
                     # Handle response status and errors
                     should_retry, result = await self._handle_response_status(response, url, attempt, retry_count)
                     if should_retry:
                         continue
                     return result
-                        
+
             except asyncio.TimeoutError:
                 logger.warning(f"GitHub API timeout (attempt {attempt + 1}/{retry_count})")
                 if attempt < retry_count - 1:
@@ -253,7 +176,7 @@ class GitHubAPIClient:
                 logger.warning(f"GitHub API error: {e} (attempt {attempt + 1}/{retry_count})")
                 if attempt < retry_count - 1:
                     await asyncio.sleep(2 ** attempt)
-        
+
         return None
 
     async def search_repositories(self, language: str, sort: str = 'stars',
