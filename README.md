@@ -14,10 +14,10 @@ git clone https://github.com/render-examples/trender.git
 cd trender
 cp .env.example .env
 
-# 2. Setup GitHub authentication (auto-generates encryption key)
+# 2. Setup GitHub OAuth authentication
 cd workflows
 pip install -r requirements.txt
-python auth_setup.py  # Auto-generates encryption key, guides through OAuth/PAT setup
+python auth_setup.py  # Guides through OAuth app setup, saves encrypted credentials to DB
 
 # 3. Create Render PostgreSQL database
 # Visit dashboard.render.com → New PostgreSQL
@@ -28,13 +28,11 @@ python auth_setup.py  # Auto-generates encryption key, guides through OAuth/PAT 
 
 # 5. Deploy to Render
 # Push to GitHub, then: Dashboard → New Blueprint → Connect repo
-# Or: render blueprint launch
 
 # 6. Create Render API key
 # Visit dashboard.render.com → Account Settings → API Keys → Create API Key
-# Copy the key for next step
 
-# 7. Trigger first run
+# 7. Trigger first run (refreshes auth, then triggers workflow)
 cd trigger
 pip install -r requirements.txt
 export RENDER_API_KEY=<your_key>
@@ -46,18 +44,19 @@ python trigger.py
 
 ```mermaid
 graph TD
-    A[Cron Job Hourly] --> B[Workflow Orchestrator]
-    B --> C[Python Analyzer]
-    B --> D[TypeScript Analyzer]
-    B --> E[Go Analyzer]
-    B --> F[Render Ecosystem]
-    C --> G[Raw Layer JSONB]
-    D --> G
-    E --> G
-    F --> G
-    G --> H[Staging Layer Validated]
-    H --> I[Analytics Layer Fact/Dim]
-    I --> J[Next.js Dashboard]
+    A[Cron Job Daily] --> B[Auth Refresh]
+    B --> C[Workflow Orchestrator]
+    C --> D[Python Analyzer]
+    C --> E[TypeScript Analyzer]
+    C --> F[Go Analyzer]
+    C --> G[Render Ecosystem]
+    D --> H[Raw Layer JSONB]
+    E --> H
+    F --> H
+    G --> H
+    H --> I[Staging Layer Validated]
+    I --> J[Analytics Layer Fact/Dim]
+    J --> K[Next.js Dashboard]
 ```
 
 **Data pipeline:**
@@ -67,8 +66,8 @@ graph TD
 
 **Processing:**
 - 4 parallel workflow tasks (Python, TypeScript, Go, Render)
-- ~150 repos analyzed in 10-20 seconds
-- Automated hourly updates via cron
+- ~150 repos analyzed per run
+- Automated daily updates via cron
 
 ## 📁 Project structure
 
@@ -77,7 +76,7 @@ trender/
 ├── workflows/          # Python workflows (ETL pipeline)
 ├── dashboard/          # Next.js dashboard (UI)
 ├── database/           # PostgreSQL schemas & migrations
-├── trigger/            # Cron trigger script
+├── trigger/            # Daily auth refresh + cron trigger
 ├── bin/               # Utility scripts
 ├── render-mcp-server/ # MCP server for Render API
 └── render.yaml        # Render service configuration
@@ -99,7 +98,7 @@ See individual README files in each directory for details.
 
 **Infrastructure:**
 - Render Workflows (distributed task execution)
-- Render Cron Job (hourly trigger)
+- Render Cron Job (daily trigger)
 - Render Web Service (dashboard)
 - Render PostgreSQL (data storage)
 
@@ -116,15 +115,8 @@ See individual README files in each directory for details.
 ### Local workflow testing
 
 ```bash
-# Quick start (server + trigger in one command)
+# Runs auth refresh + workflow server + trigger in one command
 python bin/local_dev.py
-
-# Or manual:
-cd workflows
-python workflow.py  # Starts task server on port 8120
-# In another terminal:
-cd trigger
-python trigger.py
 ```
 
 ### Local dashboard
@@ -146,38 +138,29 @@ npm run dev
 
 ## 🔐 Authentication
 
-Trender supports two GitHub auth methods:
+Trender uses GitHub OAuth App tokens, stored encrypted in PostgreSQL. Tokens are never stored in environment variables after initial setup.
 
-**Option A: Personal Access Token (PAT)** - Recommended for simplicity
-1. Run `python workflows/auth_setup.py`
-2. Choose option [1]
-3. Follow prompts to create token at github.com/settings/tokens/new
-4. Required scopes: `repo`, `read:org`
-5. Token never expires (or you control expiration)
-
-**Option B: OAuth App** - Automatic token refresh for production
-1. Create OAuth app at github.com/settings/developers
+**One-time setup:**
+1. Create an OAuth app at github.com/settings/developers
 2. Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` to `.env`
-3. Run `python workflows/auth_setup.py` and choose option [2]
-4. **Tokens auto-refresh every 8 hours** - zero manual intervention
-5. Encrypted storage in PostgreSQL for security
+3. Run `python workflows/auth_setup.py` — generates an encryption key, authorizes via browser, saves encrypted credentials to DB
 
-**What happens:**
-- `auth_setup.py` auto-generates `GITHUB_TOKEN_ENCRYPTION_KEY` (one-time)
-- OAuth credentials saved to encrypted database table
-- Every workflow run: loads tokens → checks expiry → refreshes if needed → saves back to DB
-- **Self-sustaining** - as long as workflow runs once per 6 months, the refresh chain never breaks
+**Daily refresh:**
+- `trigger/refresh_auth.py` runs once daily before the workflow, consuming the refresh token exactly once
+- GitHub's single-use refresh tokens are never used anywhere else, eliminating race conditions across parallel workflow tasks
+- New credentials are written back to the database; the access token lasts 8 hours (well within the daily cycle)
 
-**Required environment variables (OAuth):**
+**Required environment variables:**
 ```bash
+# Workflow service (trender-wf) and cron job (trender-cron)
 GITHUB_CLIENT_ID=<oauth-app-client-id>
 GITHUB_CLIENT_SECRET=<oauth-app-client-secret>
-GITHUB_TOKEN_ENCRYPTION_KEY=<auto-generated>
+GITHUB_TOKEN_ENCRYPTION_KEY=<generated by auth_setup.py>
 DATABASE_URL=<postgresql-connection-string>
 
-# Optional (initial seed only, can remove after first run)
-GITHUB_ACCESS_TOKEN=ghu_...
-GITHUB_REFRESH_TOKEN=ghr_...
+# Cron job only (trender-cron) — also needs:
+RENDER_API_KEY=<render-api-key>
+RENDER_WORKFLOW_SLUG=trender-wf
 ```
 
 ## 🎯 Metrics and scoring
@@ -208,7 +191,7 @@ Manual cleanup: `./bin/cleanup_data.sh`
 The `render.yaml` defines all services:
 - **trender-dashboard**: Next.js web service
 - **trender-wf**: Workflow orchestrator
-- **trender-cron**: Hourly trigger (6 AM PST / 14:00 UTC)
+- **trender-cron**: Daily trigger + auth refresh (6 AM PST / 14:00 UTC)
 - **trender-db**: PostgreSQL database
 
 Deploy via Render Dashboard (Blueprint) or CLI:
@@ -217,12 +200,9 @@ render blueprint launch
 ```
 
 **Post-deployment:**
-1. Add authentication environment variables to workflow service:
-   - **PAT**: `GITHUB_ACCESS_TOKEN` + `GITHUB_TOKEN_ENCRYPTION_KEY`
-   - **OAuth**: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN_ENCRYPTION_KEY`
-   - Optional for OAuth: `GITHUB_ACCESS_TOKEN` and `GITHUB_REFRESH_TOKEN` (initial seed only)
-2. Trigger manual deploy to apply env vars
-3. Test with `python trigger/trigger.py`
+1. Run `python workflows/auth_setup.py` locally to initialize credentials in the database
+2. Add `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN_ENCRYPTION_KEY` to both `trender-wf` and `trender-cron` in the Render Dashboard
+3. Trigger a manual cron run to verify auth refresh works end-to-end
 
 ## 📄 License
 

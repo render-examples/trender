@@ -2,16 +2,18 @@
 Cron Trigger Script
 Triggers the main analysis workflow via Render Workflows SDK.
 
-The SDK automatically detects local development mode via RENDER_USE_LOCAL_DEV
-and routes requests appropriately.
+Auth credentials are refreshed once daily before the workflow runs.
+The refresh is the only place GitHub OAuth tokens are consumed.
 """
 
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 from render_sdk.client import Client
+from refresh_auth import refresh_github_auth
 
 # Load .env file from parent directory (override=True ensures .env always wins
 # over any stale values already exported in the shell environment)
@@ -107,5 +109,25 @@ async def trigger_workflow():
         return None
 
 
+async def main():
+    """Refresh auth credentials then trigger the workflow."""
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting daily run")
+
+    # Step 1: Refresh auth credentials (must succeed before workflow runs)
+    print("Step 1: Refreshing GitHub auth credentials...")
+    auth_ok = await refresh_github_auth()
+    if not auth_ok:
+        print("✗ Auth refresh failed - aborting workflow trigger")
+        sys.exit(1)
+    print("✓ Auth credentials refreshed")
+
+    # Step 2: Trigger the workflow
+    print("Step 2: Triggering analysis workflow...")
+    result = await trigger_workflow()
+    if result is None:
+        print("✗ Workflow trigger failed")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    asyncio.run(trigger_workflow())
+    asyncio.run(main())

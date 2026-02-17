@@ -26,17 +26,12 @@ services:
         fromDatabase:
           name: trender-db
           property: connectionString
-      # GitHub OAuth Credentials (one-time setup)
+      # GitHub OAuth App credentials (one-time setup)
       - key: GITHUB_CLIENT_ID
         sync: false
       - key: GITHUB_CLIENT_SECRET
         sync: false
       - key: GITHUB_TOKEN_ENCRYPTION_KEY
-        sync: false
-      # GitHub Tokens (optional - used for initial DB seed on first run)
-      - key: GITHUB_ACCESS_TOKEN
-        sync: false
-      - key: GITHUB_REFRESH_TOKEN
         sync: false
       # Development Settings
       - key: DEV_MODE
@@ -44,7 +39,9 @@ services:
       - key: DEV_REPO_LIMIT
         value: 5
 
-  # Cron Job - Daily Analysis Trigger (6 AM PST / 14:00 UTC)
+  # Cron Job - Daily Auth Refresh + Analysis Trigger (6 AM PST / 14:00 UTC)
+  # Runs refresh_auth.py first, then triggers the workflow.
+  # This is the only place GitHub OAuth tokens are refreshed.
   - type: cron
     name: trender-cron
     runtime: python
@@ -55,6 +52,17 @@ services:
       - key: RENDER_WORKFLOW_SLUG
         sync: false
       - key: RENDER_API_KEY
+        sync: false
+      # Database and OAuth credentials needed for refresh_auth.py
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trender-db
+          property: connectionString
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_TOKEN_ENCRYPTION_KEY
         sync: false
 
 # PostgreSQL Database

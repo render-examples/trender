@@ -1,6 +1,6 @@
 """
 GitHub API Client
-Async GitHub API client with rate limiting, retry logic, and OAuth token refresh.
+Async GitHub API client with rate limiting and retry logic.
 """
 
 import aiohttp
@@ -8,8 +8,7 @@ import asyncio
 import base64
 import json
 import logging
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -18,43 +17,15 @@ RENDER_REPOS_PER_PAGE = 100  # Number of results to fetch when searching for ren
 
 
 class GitHubAPIClient:
-    """Async GitHub API client with token authentication.
+    """Async GitHub API client with token authentication."""
 
-    Supports both OAuth App tokens and Personal Access Tokens (PAT).
-    OAuth tokens are automatically refreshed when they expire via OAuthCredentialManager.
-    """
-
-    def __init__(self, access_token: str, refresh_token: str = None,
-                 client_id: str = None, client_secret: str = None,
-                 oauth_manager=None):
-        """
-        Initialize GitHub API client with a GitHub access token.
-
-        Args:
-            access_token: GitHub access token - can be either:
-                         - Personal Access Token (PAT) from GitHub settings (starts with ghp_ or github_pat_)
-                         - OAuth token from OAuth App flow (starts with ghu_)
-            refresh_token: OAuth refresh token (optional, for legacy compatibility)
-            client_id: GitHub OAuth App client ID (optional, for legacy compatibility)
-            client_secret: GitHub OAuth App client secret (optional, for legacy compatibility)
-            oauth_manager: Optional OAuthCredentialManager for handling token refresh
-        """
+    def __init__(self, access_token: str):
         self.access_token = access_token
-        self.refresh_token = refresh_token
-        self.client_id = client_id or os.getenv('GITHUB_CLIENT_ID')
-        self.client_secret = client_secret or os.getenv('GITHUB_CLIENT_SECRET')
-        self.oauth_manager = oauth_manager
         self.base_url = "https://api.github.com"
         self.session: Optional[aiohttp.ClientSession] = None
         self.connector: Optional[aiohttp.TCPConnector] = None
         self.rate_limit_remaining = 5000
         self.rate_limit_reset = None
-        self.is_oauth_token = access_token.startswith('ghu_') if access_token else False
-
-        if self.is_oauth_token:
-            logger.info("OAuth token detected (managed by OAuthCredentialManager)")
-        else:
-            logger.info("PAT token detected (no expiration)")
 
     async def __aenter__(self):
         # Use TCPConnector with force_close for proper cleanup
@@ -160,16 +131,16 @@ class GitHubAPIClient:
                     self.rate_limit_remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
                     self.rate_limit_reset = int(response.headers.get('X-RateLimit-Reset', 0))
 
-                    # Handle 401 Unauthorized - token may have expired
-                    if response.status == 401 and self.oauth_manager:
-                        logger.warning("Received 401 Unauthorized - delegating to OAuthCredentialManager")
-                        if await self.oauth_manager.handle_401_error():
-                            # Get refreshed token and update session
-                            self.access_token = await self.oauth_manager.get_valid_token()
-                            self.session.headers.update({'Authorization': f'token {self.access_token}'})
-                            logger.info("Token refreshed, retrying request...")
-                            continue
-                        logger.error("Token refresh failed, cannot continue")
+                    # Handle 401 Unauthorized - token is invalid or expired.
+                    # Token refresh only happens in trigger/refresh_auth.py before the
+                    # workflow runs. A 401 here means the daily refresh did not occur or
+                    # the credentials in the database are stale.
+                    if response.status == 401:
+                        logger.error(
+                            "[AUTH] Received 401 Unauthorized from GitHub API. "
+                            "The access token in the database may be stale. "
+                            "Ensure trigger/refresh_auth.py ran successfully before this workflow."
+                        )
                         return None
 
                     # Handle response status and errors

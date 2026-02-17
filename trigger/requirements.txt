@@ -6,3 +6,9 @@ aiohttp>=3.9.0
 
 # Environment variables
 python-dotenv>=1.0.0
+
+# Database client (for refresh_auth.py)
+asyncpg>=0.29.0
+
+# Token encryption (for refresh_auth.py)
+cryptography>=42.0.0
