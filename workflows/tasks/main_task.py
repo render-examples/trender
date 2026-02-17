@@ -1,0 +1,162 @@
+"""
+Main workflow orchestration task.
+"""
+
+import os
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Dict, List
+import asyncpg
+
+from render_sdk.workflows import task
+from connections import cleanup_connections
+from utils import WorkflowTrace, init_connections_with_error_handling, process_task_result, add_task_to_trace
+from etl import aggregate_results
+from tasks.language_tasks import fetch_language_repos, fetch_render_repos
+
+logger = logging.getLogger(__name__)
+
+# Development mode - set to limit processing for faster iteration
+DEV_MODE = os.getenv('DEV_MODE', 'false').lower() == 'true'
+
+# Target languages for analysis
+TARGET_LANGUAGES = ['Python', 'TypeScript', 'Go']
+
+
+async def run_dev_mode_pipeline(trace: WorkflowTrace, execution_start: datetime) -> Dict:
+    """
+    Run development mode pipeline (Python only + ETL).
+
+    Args:
+        trace: Workflow trace instance
+        execution_start: Workflow start timestamp
+
+    Returns:
+        Execution summary with trace_id and dev_mode flag
+    """
+    logger.info("DEV_MODE enabled - running Python task only")
+    python_result = await fetch_language_repos('Python')
+    add_task_to_trace(python_result, trace, language='Python')
+    logger.info("Python task completed, starting ETL pipeline")
+
+    github_api, db_pool = await init_connections_with_error_handling()
+    aggregate_task = trace.add_task('aggregate_results')
+    final_result = await aggregate_results([python_result], db_pool, execution_start, trace)
+    trace.complete_task(aggregate_task)
+
+    execution_time = (datetime.now(timezone.utc) - execution_start).total_seconds()
+    logger.info(f"DEV_MODE workflow completed in {execution_time}s")
+
+    trace.repos_processed = final_result.get('repos_processed', 0)
+    trace.complete('completed')
+    await trace.persist(db_pool)
+
+    final_result.update({
+        'dev_mode': True,
+        'languages': ['Python'],
+        'trace_id': trace.run_id
+    })
+    return final_result
+
+
+async def run_production_pipeline(trace: WorkflowTrace, execution_start: datetime) -> Dict:
+    """
+    Run production mode pipeline (all languages + Render + ETL).
+
+    Args:
+        trace: Workflow trace instance
+        execution_start: Workflow start timestamp
+
+    Returns:
+        Execution summary with trace_id
+    """
+    # Production mode: Full pipeline
+    language_tasks = [fetch_language_repos(lang) for lang in TARGET_LANGUAGES]
+    logger.info(f"Created {len(language_tasks)} language tasks for {TARGET_LANGUAGES}")
+
+    results = await asyncio.gather(*language_tasks, fetch_render_repos(), return_exceptions=True)
+
+    # Process results and update trace
+    logger.info(f"Parallel tasks completed. Total results: {len(results)}")
+    for i, result in enumerate(results):
+        process_task_result(result, i, TARGET_LANGUAGES, trace)
+
+    # Aggregate and store final results
+    github_api, db_pool = await init_connections_with_error_handling()
+    aggregate_task = trace.add_task('aggregate_results')
+    final_result = await aggregate_results(results, db_pool, execution_start, trace)
+    trace.complete_task(aggregate_task)
+
+    trace.repos_processed = final_result.get('repos_processed', 0)
+    trace.complete('completed')
+    await trace.persist(db_pool)
+    final_result['trace_id'] = trace.run_id
+    return final_result
+
+
+async def finalize_workflow_on_error(trace: WorkflowTrace, error: Exception) -> None:
+    """
+    Finalize workflow on error by marking trace as failed and attempting to persist.
+
+    Args:
+        trace: Workflow trace instance
+        error: Exception that caused the failure
+    """
+    trace.complete('failed', error_message=str(error))
+    try:
+        # Try to persist trace if db_pool is available in the calling scope
+        # Note: This is a best-effort attempt, may not always succeed
+        pass
+    except Exception:
+        pass
+
+
+@task
+async def main_analysis_task() -> Dict:
+    """
+    Main orchestrator task for the entire analysis workflow.
+
+    Spawns parallel tasks for:
+    - 3 language-specific analyses (Python, TypeScript, Go)
+    - 1 Render projects fetch
+
+    Returns execution summary.
+    """
+    execution_start = datetime.now(timezone.utc)
+    logger.info(f"Workflow started at {execution_start}")
+
+    # Initialize workflow trace
+    trace = WorkflowTrace()
+    logger.info(f"Workflow trace initialized: {trace.run_id}")
+
+    # Track db_pool for cleanup
+    db_pool = None
+    github_api = None
+
+    try:
+        if DEV_MODE:
+            result = await run_dev_mode_pipeline(trace, execution_start)
+        else:
+            result = await run_production_pipeline(trace, execution_start)
+
+        return result
+
+    except Exception as e:
+        # Mark trace as failed and persist
+        trace.complete('failed', error_message=str(e))
+        try:
+            # Try to get db_pool if available
+            if db_pool is not None:
+                await trace.persist(db_pool)
+        except Exception:
+            pass
+        raise
+
+    finally:
+        # Cleanup if connections were initialized
+        try:
+            if github_api is not None and db_pool is not None:
+                await cleanup_connections(github_api, db_pool)
+        except Exception:
+            pass  # Connections may not have been initialized if error occurred early
