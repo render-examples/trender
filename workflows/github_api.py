@@ -56,10 +56,15 @@ class GitHubAPIClient:
             logger.info("PAT token detected (no expiration)")
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession(headers={
-            'Authorization': f'token {self.access_token}',
-            'Accept': 'application/vnd.github.v3+json'
-        })
+        # Use TCPConnector with force_close for proper cleanup
+        connector = aiohttp.TCPConnector(force_close=True)
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            headers={
+                'Authorization': f'token {self.access_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -69,6 +74,8 @@ class GitHubAPIClient:
         """Close the HTTP session."""
         if self.session:
             await self.session.close()
+            # Small delay to allow pending operations to complete
+            await asyncio.sleep(0.1)
 
     async def _handle_response_status(self, response: aiohttp.ClientResponse, url: str, 
                                       attempt: int, retry_count: int) -> tuple[bool, Optional[dict]]:

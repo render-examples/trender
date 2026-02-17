@@ -211,7 +211,9 @@ class OAuthCredentialManager:
         )
 
         # Make the request with aiohttp
-        async with aiohttp.ClientSession() as session:
+        # Use TCPConnector with force_close to ensure proper cleanup
+        connector = aiohttp.TCPConnector(force_close=True)
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.post(uri, headers=headers, data=body) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -250,13 +252,13 @@ class OAuthCredentialManager:
         
         try:
             result = await self._exchange_refresh_token()
-            
+
             # GitHub may return a new refresh token
             new_access_token = result['access_token']
             new_refresh_token = result.get('refresh_token', self._refresh_token)
-            expires_in = result.get('expires_in', 28800)  # Default 8 hours
-            refresh_token_expires_in = result.get('refresh_token_expires_in', 15724800)  # Default 6 months
-            
+            expires_in = int(result.get('expires_in', 28800))  # Default 8 hours
+            refresh_token_expires_in = int(result.get('refresh_token_expires_in', 15724800))  # Default 6 months
+
             # Save new tokens to database
             await self.save_credentials(
                 new_access_token,
