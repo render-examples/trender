@@ -20,10 +20,12 @@ logger = logging.getLogger(__name__)
 def _validate_github_token(token: str) -> tuple[bool, str, str, str]:
     """
     Validate GitHub token format and extract OAuth credentials if needed.
-    
+
     Returns:
         Tuple of (is_oauth, refresh_token, client_id, client_secret)
     """
+    # Strip whitespace that might come from environment variables
+    token = token.strip()
     is_oauth = token.startswith('ghu_')
     is_pat = token.startswith(('ghp_', 'gho_', 'github_pat_'))
     
@@ -35,11 +37,14 @@ def _validate_github_token(token: str) -> tuple[bool, str, str, str]:
     
     if not is_oauth:
         return False, None, None, None
-    
-    # OAuth token - get credentials
+
+    # OAuth token - get credentials and strip whitespace
     refresh_token = os.getenv('GITHUB_REFRESH_TOKEN')
+    refresh_token = refresh_token.strip() if refresh_token else None
     client_id = os.getenv('GITHUB_CLIENT_ID')
+    client_id = client_id.strip() if client_id else None
     client_secret = os.getenv('GITHUB_CLIENT_SECRET')
+    client_secret = client_secret.strip() if client_secret else None
     
     # Warn about missing credentials
     if not refresh_token:
@@ -86,8 +91,9 @@ async def init_connections():
 
             if credentials_loaded:
                 # Use credentials from database
-                logger.info("✅ Loaded GitHub credentials from database")
+                logger.info("✅ Loaded GitHub credentials from database (auto-refresh enabled)")
                 github_access_token = await oauth_manager.get_valid_token()
+                logger.info("✅ Using token from database (expires: %s)", oauth_manager._token_expires_at)
             else:
                 # No credentials in DB - try to seed from env vars
                 logger.info("No credentials in database, checking environment variables for initial seed...")
@@ -96,6 +102,9 @@ async def init_connections():
 
                 if env_access_token and env_refresh_token:
                     logger.info("Seeding database with credentials from environment variables...")
+                    # Strip whitespace from environment variables
+                    env_access_token = env_access_token.strip()
+                    env_refresh_token = env_refresh_token.strip()
                     # Save to DB for future runs
                     await oauth_manager.save_credentials(
                         access_token=env_access_token,
@@ -113,11 +122,15 @@ async def init_connections():
 
     # Fallback to environment variable tokens if OAuth manager not available
     if not github_access_token:
+        logger.info("Using GitHub token from environment variables (no database credentials)")
         github_access_token = os.getenv('GITHUB_ACCESS_TOKEN')
         if not github_access_token:
             raise ValueError("GITHUB_ACCESS_TOKEN environment variable is required")
 
+        # Strip whitespace from environment variable
+        github_access_token = github_access_token.strip()
         _, refresh_token, client_id, client_secret = _validate_github_token(github_access_token)
+        logger.info("✅ Token validated from environment (type: %s)", 'OAuth' if github_access_token.startswith('ghu_') else 'PAT')
 
     # Initialize GitHub API client
     try:
