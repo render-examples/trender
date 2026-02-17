@@ -61,6 +61,22 @@ export RENDER_WORKFLOW_SLUG=trender-wf
 python trigger.py
 ```
 
+**⚠️ Important: Switching between local dev and production**
+
+To trigger the **deployed (production) workflow**, ensure your `.env` file has:
+```bash
+RENDER_USE_LOCAL_DEV=false
+# RENDER_LOCAL_DEV_URL=http://localhost:8120  # Comment this out!
+```
+
+To trigger your **local development workflow**, set:
+```bash
+RENDER_USE_LOCAL_DEV=true
+RENDER_LOCAL_DEV_URL=http://localhost:8120
+```
+
+**Note:** `RENDER_LOCAL_DEV_URL` takes precedence over `RENDER_USE_LOCAL_DEV`, so it **must be commented out** to reach production, even if `RENDER_USE_LOCAL_DEV=false`.
+
 **Expected output:**
 
 ```
@@ -185,10 +201,11 @@ curl https://trender-dashboard.onrender.com/api/workflow-status
 | Issue | Solution |
 |-------|----------|
 | "RENDER_API_KEY not set" | Export key or add to `.env` file |
-| "Connection refused" | Check RENDER_LOCAL_DEV_URL if using local dev |
+| "Connection refused" to localhost | **Comment out** `RENDER_LOCAL_DEV_URL` in `.env` to reach production |
 | "Workflow not found" | Verify RENDER_WORKFLOW_SLUG matches dashboard |
 | Script hangs | Check network connectivity to Render API |
 | "Task not found" | Ensure workflow is deployed with `main_analysis_task` |
+| "All connection attempts failed" | Check if `RENDER_LOCAL_DEV_URL` is set (should be commented out for production) |
 
 ## Dependencies
 
