@@ -21,7 +21,6 @@ Usage:
 """
 
 import os
-import base64
 from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 

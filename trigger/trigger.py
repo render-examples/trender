@@ -78,27 +78,12 @@ async def trigger_workflow():
                 'task_identifier': task_identifier
             }
 
-    except TypeError as e:
-        # Handle "'NoneType' object is not iterable" and similar errors
-        if 'NoneType' in str(e) or 'iterable' in str(e):
+    except Exception as e:
+        error_str = str(e)
+        if 'NoneType' in error_str and 'iterable' in error_str:
+            # Known issue: SDK triggers task successfully but response parsing fails in local dev
             print(f"✓ Task triggered successfully (local dev mode)")
             print(f"  Note: Local dev response parsing skipped")
-            return {
-                'run_id': 'local-dev',
-                'status': 'triggered',
-                'task_identifier': task_identifier
-            }
-        else:
-            print(f"✗ Exception during workflow trigger: {str(e)}")
-            return None
-
-    except Exception as e:
-        # Check if this is the known local dev error
-        error_str = str(e)
-        if use_local_dev and ('NoneType' in error_str and 'iterable' in error_str):
-            # Known issue: SDK triggers task successfully but response parsing fails
-            print(f"✓ Task triggered successfully (local dev mode)")
-            print(f"  Note: SDK response parsing encountered expected local dev error")
             return {
                 'run_id': 'local-dev',
                 'status': 'triggered',

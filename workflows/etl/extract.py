@@ -56,7 +56,9 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
             if not repo_name:
                 continue
             readme = readme_contents.get(repo_name) if readme_contents else None
-            
+            if readme:
+                readme = readme.replace('\x00', '')
+
             await conn.execute("""
                 INSERT INTO raw_github_repos
                     (repo_full_name, api_response, readme_content, source_language)

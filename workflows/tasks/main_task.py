@@ -7,8 +7,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List
-import asyncpg
-
 from app import app
 from connections import cleanup_connections
 from utils import WorkflowTrace, init_connections_with_error_handling, process_task_result, add_task_to_trace
@@ -99,23 +97,6 @@ async def run_production_pipeline(trace: WorkflowTrace, execution_start: datetim
         return final_result
     finally:
         await cleanup_connections(github_api, db_pool)
-
-
-async def finalize_workflow_on_error(trace: WorkflowTrace, error: Exception) -> None:
-    """
-    Finalize workflow on error by marking trace as failed and attempting to persist.
-
-    Args:
-        trace: Workflow trace instance
-        error: Exception that caused the failure
-    """
-    trace.complete('failed', error_message=str(error))
-    try:
-        # Try to persist trace if db_pool is available in the calling scope
-        # Note: This is a best-effort attempt, may not always succeed
-        pass
-    except Exception:
-        pass
 
 
 @app.task

@@ -21,11 +21,14 @@ Environment:
 """
 
 import os
+import re
 import sys
 import subprocess
 import time
 import signal
 import argparse
+import traceback
+import unicodedata
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -231,9 +234,6 @@ def sanitize_output_line(line: str) -> str:
     Returns:
         Sanitized line safe for terminal display
     """
-    import re
-    import unicodedata
-    
     # Remove control characters except newline, tab, and carriage return
     # Control characters can cause terminal issues
     sanitized = ''.join(
@@ -288,7 +288,6 @@ def should_display_line(line: str) -> bool:
         r'!\[.*\]\(.*\)',  # Markdown image syntax
     ]
     
-    import re
     for pattern in readme_patterns:
         if re.search(pattern, line, re.IGNORECASE):
             return False
@@ -457,7 +456,6 @@ def main():
 
     except Exception as e:
         print_error(f"Error: {e}")
-        import traceback
         traceback.print_exc()
 
     finally:

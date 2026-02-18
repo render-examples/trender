@@ -4,7 +4,6 @@ Data retention and cleanup operations.
 
 import os
 import logging
-import traceback
 from typing import Dict
 import asyncpg
 
@@ -13,6 +12,12 @@ logger = logging.getLogger(__name__)
 
 async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
     """Store enriched repository data in staging layer."""
+    description = repo.get('description')
+    readme = repo.get('readme_content')
+    if description:
+        description = description.replace('\x00', '')
+    if readme:
+        readme = readme.replace('\x00', '')
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO stg_repos_validated
@@ -25,9 +30,9 @@ async def store_in_staging(repo: Dict, db_pool: asyncpg.Pool):
                 readme_content = EXCLUDED.readme_content,
                 loaded_at = NOW()
         """, repo.get('repo_full_name'), repo.get('repo_url'), repo.get('language'),
-            repo.get('description'), repo.get('stars', 0),
+            description, repo.get('stars', 0),
             repo.get('created_at'), repo.get('updated_at'),
-            repo.get('readme_content'))
+            readme)
 
 
 async def cleanup_old_data(db_pool: asyncpg.Pool) -> Dict[str, int]:
@@ -93,7 +98,6 @@ async def cleanup_old_data(db_pool: asyncpg.Pool) -> Dict[str, int]:
         # Return error but don't fail the workflow
         return {'error': f'Database error: {str(e)}'}
     except Exception as e:
-        logger.error(f"Error during data retention cleanup: {type(e).__name__}: {str(e)}")
-        logger.error(f"Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        logger.error(f"Error during data retention cleanup: {type(e).__name__}: {str(e)}", exc_info=True)
         # Return error but don't fail the workflow
         return {'error': str(e)}

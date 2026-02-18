@@ -184,7 +184,6 @@ async def load_single_repo(
     )
 
     normalized_stars = stars / max_stars if max_stars > 0 else 0.0
-    recency_score = calculate_momentum_score(repo.get('created_at'), now, 1, 1.0, 0.0) if max_stars == 1 else momentum_score / 0.3 if normalized_stars == 0 else 0.0
 
     logger.info(f"Score for {repo_name}: stars={stars}, norm_stars={normalized_stars:.3f}, momentum={momentum_score:.3f}")
 
