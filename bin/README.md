@@ -55,11 +55,11 @@ python bin/local_dev.py --no-wait
 - Python 3.8+
 - Valid `.env` file with required variables:
   - `DATABASE_URL`
-  - `GITHUB_ACCESS_TOKEN`
+  - `GITHUB_CLIENT_ID`
+  - `GITHUB_CLIENT_SECRET`
+  - `GITHUB_TOKEN_ENCRYPTION_KEY`
   - `RENDER_API_KEY`
   - `RENDER_WORKFLOW_SLUG`
-  - `RENDER_USE_LOCAL_DEV=true`
-  - `RENDER_LOCAL_DEV_URL=http://localhost:8120`
 
 ### Environment variables
 
@@ -117,7 +117,4 @@ Preview script for testing the dashboard locally.
 ./bin/preview.sh
 ```
 
----
-
-For more information, see [LOCAL_TESTING.md](../LOCAL_TESTING.md) in the project root.
 

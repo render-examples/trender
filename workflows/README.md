@@ -125,7 +125,16 @@ momentum_score = (recency_score * 0.7) + (normalized_stars * 0.3)
 | `github_api.py` | Async GitHub API client (search, fetch) |
 | `connections.py` | Shared resource management (DB pool, HTTP session) |
 | `auth_setup.py` | Interactive GitHub auth token generator |
-| `etl/extract.py` | Raw layer data ingestion |
+| `tasks/main_task.py` | Main orchestrator task (spawns parallel subtasks, aggregates) |
+| `tasks/language_tasks.py` | `fetch_language_repos` and `fetch_render_repos` tasks |
+| `tasks/batch_analysis.py` | `analyze_repo_batch` subtask (validates, enriches, stores to staging) |
+| `etl/extract.py` | Raw layer ingestion (`store_raw_repos`) and staging extraction |
+| `etl/cleanup.py` | Staging layer storage (`store_in_staging`) and data retention cleanup |
+| `etl/load.py` | Analytics layer loading (fact/dim inserts, momentum scoring) |
+| `etl/aggregate.py` | ETL orchestration (staging → analytics pipeline) |
+| `lib/encryption.py` | Fernet encryption/decryption for GitHub tokens |
+| `lib/oauth_manager.py` | GitHub OAuth token lifecycle management |
+| `utils/` | Shared helpers (chunking, tracing, connection init) |
 | `requirements.txt` | Python dependencies |
 
 ## Environment variables
@@ -177,7 +186,7 @@ python trigger.py
 ## Running on Render
 
 Workflows are triggered via:
-1. **Cron job**: Hourly at 14:00 UTC (6 AM PST)
+1. **Cron job**: Daily at 14:00 UTC (6 AM PST)
 2. **Manual**: Dashboard → Workflows → trender-wf → Run Task
 3. **API**: `python trigger/trigger.py`
 
@@ -203,9 +212,9 @@ WHERE run_id = 'wfr_...';
 
 | Issue | Solution |
 |-------|----------|
-| `GITHUB_ACCESS_TOKEN not set` | Add token to Render environment variables |
-| Connection refused | Check DATABASE_URL is correct |
-| Rate limit errors | Verify token scopes include `repo`, `read:org` |
+| Auth errors / 401 | Run `python auth_setup.py` to initialize credentials in the database |
+| Connection refused | Check `DATABASE_URL` is correct |
+| Rate limit errors | Verify OAuth token is valid; token auto-refreshes daily via `refresh_auth.py` |
 | No repos returned | GitHub API may be rate limited or down |
 
 ## Data flow
@@ -224,8 +233,8 @@ Dashboard views
 
 ## Performance
 
-- **Execution time**: 10-20 seconds for ~150 repos
-- **Parallelism**: 4 concurrent tasks
+- **Execution time**: ~90 seconds for ~100 repos
+- **Parallelism**: 4 concurrent tasks (25 repos each)
 - **Batching**: Repos analyzed in batches of 10
 - **README fetching**: Parallel requests to minimize API latency
 
