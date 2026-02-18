@@ -29,15 +29,8 @@ async def extract_from_staging(db_pool: asyncpg.Pool) -> List[Dict]:
                 srv.stars,
                 srv.created_at,
                 srv.updated_at,
-                srv.readme_content,
-                sre.render_category,
-                sre.render_services,
-                sre.render_complexity_score,
-                sre.has_blueprint_button,
-                sre.service_count
+                srv.readme_content
             FROM stg_repos_validated srv
-            LEFT JOIN stg_render_enrichment sre
-                ON srv.repo_full_name = sre.repo_full_name
             ORDER BY srv.stars DESC
         """)
 
@@ -74,27 +67,3 @@ async def store_raw_repos(repos: List[Dict], db_pool: asyncpg.Pool,
                     source_language = EXCLUDED.source_language,
                     fetch_timestamp = NOW()
             """, repo_name, json.dumps(repo), readme, source_language)
-
-
-async def store_raw_metrics(repo_full_name: str, metric_type: str,
-                            metric_data: Dict, db_pool: asyncpg.Pool):
-    """
-    Store raw metrics data in the raw layer.
-
-    Args:
-        repo_full_name: Full repository name (owner/repo)
-        metric_type: Type of metric ('commits', 'issues', 'contributors')
-        metric_data: Metric data from GitHub API
-        db_pool: Database connection pool
-    """
-    json_str = json.dumps(metric_data)
-    
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO raw_repo_metrics
-                (repo_full_name, metric_type, metric_data)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (repo_full_name, metric_type) DO UPDATE SET
-                metric_data = EXCLUDED.metric_data,
-                fetch_timestamp = NOW()
-        """, repo_full_name, metric_type, json_str)

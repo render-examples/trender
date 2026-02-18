@@ -129,50 +129,6 @@ async def insert_fact_snapshot(
         return False
 
 
-async def insert_render_usage_facts(
-    repo_key: int,
-    repo: dict,
-    today: date,
-    conn: asyncpg.Connection
-) -> None:
-    """
-    Insert fact_render_usage records for render services.
-
-    Args:
-        repo_key: Repository key
-        repo: Repository record
-        today: Snapshot date
-        conn: Database connection
-    """
-    render_services = repo.get('render_services', [])
-    if not render_services:
-        return
-
-    complexity = repo.get('render_complexity_score', 0)
-    has_blueprint = repo.get('has_blueprint_button', False)
-
-    for service_type in render_services:
-        # Get service_key from dim_render_services
-        service_key = await conn.fetchval("""
-            SELECT service_key FROM dim_render_services
-            WHERE service_type = $1
-        """, service_type)
-
-        if service_key:
-            try:
-                await conn.execute("""
-                    INSERT INTO fact_render_usage
-                        (repo_key, service_key, snapshot_date, service_count,
-                         complexity_score, has_blueprint)
-                    VALUES ($1, $2, $3, 1, $4, $5)
-                    ON CONFLICT (repo_key, service_key, snapshot_date) DO UPDATE SET
-                        complexity_score = EXCLUDED.complexity_score,
-                        has_blueprint = EXCLUDED.has_blueprint
-                """, repo_key, service_key, today, complexity, has_blueprint)
-            except Exception as e:
-                logger.error(f"Error inserting render usage for service {service_type}: {type(e).__name__}: {e}")
-
-
 async def load_single_repo(
     repo: dict,
     idx: int,
@@ -238,10 +194,6 @@ async def load_single_repo(
     )
     if not success:
         return False
-
-    # Insert render usage facts if applicable
-    if is_render and repo.get('render_services'):
-        await insert_render_usage_facts(repo_key, repo, today, conn)
 
     return True
 

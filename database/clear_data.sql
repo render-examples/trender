@@ -19,7 +19,6 @@ BEGIN;
 -- =======================
 -- Clear fact tables that reference dimension tables
 
-TRUNCATE TABLE fact_render_usage CASCADE;
 TRUNCATE TABLE fact_repo_snapshots CASCADE;
 
 -- =======================
@@ -36,7 +35,6 @@ TRUNCATE TABLE dim_repositories RESTART IDENTITY CASCADE;
 -- =======================
 -- Clear staging tables
 
-TRUNCATE TABLE stg_render_enrichment CASCADE;
 TRUNCATE TABLE stg_repos_validated RESTART IDENTITY CASCADE;
 
 -- =======================
@@ -44,7 +42,6 @@ TRUNCATE TABLE stg_repos_validated RESTART IDENTITY CASCADE;
 -- =======================
 -- Clear raw ingestion tables
 
-TRUNCATE TABLE raw_repo_metrics RESTART IDENTITY CASCADE;
 TRUNCATE TABLE raw_github_repos RESTART IDENTITY CASCADE;
 
 -- =======================
@@ -77,11 +74,7 @@ COMMIT;
 
 SELECT 'raw_github_repos' as table_name, COUNT(*) as row_count FROM raw_github_repos
 UNION ALL
-SELECT 'raw_repo_metrics', COUNT(*) FROM raw_repo_metrics
-UNION ALL
 SELECT 'stg_repos_validated', COUNT(*) FROM stg_repos_validated
-UNION ALL
-SELECT 'stg_render_enrichment', COUNT(*) FROM stg_render_enrichment
 UNION ALL
 SELECT 'dim_repositories', COUNT(*) FROM dim_repositories
 UNION ALL
@@ -90,7 +83,5 @@ UNION ALL
 SELECT 'dim_render_services', COUNT(*) FROM dim_render_services
 UNION ALL
 SELECT 'fact_repo_snapshots', COUNT(*) FROM fact_repo_snapshots
-UNION ALL
-SELECT 'fact_render_usage', COUNT(*) FROM fact_render_usage
 ORDER BY table_name;
 

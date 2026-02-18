@@ -97,7 +97,6 @@ main_analysis_task (orchestrator)
 4. Load to analytics layer:
    - `dim_repositories` (upsert with SCD Type 2)
    - `fact_repo_snapshots` (daily snapshot with momentum score)
-   - `fact_render_usage` (for Render repos only)
 5. Run data retention cleanup
 
 **Scoring formula:**

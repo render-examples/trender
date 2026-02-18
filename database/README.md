@@ -52,19 +52,6 @@ CREATE TABLE raw_github_repos (
 
 **Use case**: Reprocess data without re-fetching from GitHub
 
-#### `raw_repo_metrics`
-Additional metrics fetched per repository.
-
-```sql
-CREATE TABLE raw_repo_metrics (
-    id BIGSERIAL PRIMARY KEY,
-    repo_full_name VARCHAR(255) NOT NULL,
-    metric_type VARCHAR(50),
-    metric_value JSONB,
-    fetch_timestamp TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
 ### 2. Staging Layer (Retention: 7 days)
 
 **Purpose**: ETL audit trail and data quality validation
@@ -92,26 +79,6 @@ CREATE TABLE stg_repos_validated (
 - Non-null language
 - Valid timestamps
 - Star count ≥ 0
-
-#### `stg_render_enrichment`
-Render-specific metadata for repositories with `render.yaml`.
-
-```sql
-CREATE TABLE stg_render_enrichment (
-    repo_full_name VARCHAR(255) PRIMARY KEY,
-    render_category VARCHAR(50),
-    render_services JSONB,  -- ['web', 'cron', 'worker', 'postgres', ...]
-    render_complexity_score INTEGER,
-    has_blueprint_button BOOLEAN,
-    service_count INTEGER,
-    loaded_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**Enrichment logic:**
-- Parse `render.yaml` to extract service types
-- Calculate complexity score based on service count
-- Categorize as 'official', 'community', or 'blueprint'
 
 ### 3. Analytics Layer (Retention: 30 days)
 
@@ -195,23 +162,6 @@ CREATE TABLE fact_repo_snapshots (
 
 **Unique constraint**: `(repo_key, snapshot_date)`
 
-#### `fact_render_usage`
-Render service adoption by repository.
-
-```sql
-CREATE TABLE fact_render_usage (
-    usage_key BIGSERIAL PRIMARY KEY,
-    repo_key BIGINT REFERENCES dim_repositories(repo_key),
-    service_key BIGINT REFERENCES dim_render_services(service_key),
-    snapshot_date DATE NOT NULL,
-    service_count INTEGER,
-    complexity_score INTEGER,
-    has_blueprint BOOLEAN
-);
-```
-
-**Unique constraint**: `(repo_key, service_key, snapshot_date)`
-
 #### `fact_workflow_runs`
 Workflow execution traces for observability.
 
@@ -252,22 +202,20 @@ LIMIT 100;
 ```
 
 #### `analytics_render_showcase`
-Render ecosystem projects with enrichment.
+Render ecosystem projects.
 
 ```sql
-SELECT 
+SELECT
     dr.repo_full_name,
+    dr.render_category,
     frs.stars,
     frs.momentum_score,
-    fru.complexity_score,
-    fru.has_blueprint,
-    COUNT(DISTINCT fru.service_key) as service_count
+    frs.star_velocity,
+    frs.activity_score
 FROM dim_repositories dr
 JOIN fact_repo_snapshots frs ON dr.repo_key = frs.repo_key
-LEFT JOIN fact_render_usage fru ON dr.repo_key = fru.repo_key
 WHERE dr.language = 'render'
   AND frs.snapshot_date = CURRENT_DATE
-GROUP BY 1, 2, 3, 4, 5
 ORDER BY frs.momentum_score DESC;
 ```
 
@@ -281,7 +229,7 @@ SELECT
     frs.stars,
     frs.momentum_score,
     frs.rank_in_language,
-    EXISTS(SELECT 1 FROM fact_render_usage WHERE repo_key = dr.repo_key) as uses_render
+    (dr.language = 'render') as uses_render
 FROM fact_repo_snapshots frs
 JOIN dim_repositories dr ON frs.repo_key = dr.repo_key
 JOIN dim_languages dl ON frs.language_key = dl.language_key
@@ -402,7 +350,6 @@ CREATE INDEX idx_dim_languages_name ON dim_languages(language_name);
 -- Fact table queries
 CREATE INDEX idx_fact_snapshots_date ON fact_repo_snapshots(snapshot_date);
 CREATE INDEX idx_fact_snapshots_momentum ON fact_repo_snapshots(momentum_score DESC);
-CREATE INDEX idx_fact_render_usage_date ON fact_render_usage(snapshot_date);
 
 -- Workflow traces
 CREATE INDEX idx_workflow_runs_started ON fact_workflow_runs(started_at DESC);
@@ -417,11 +364,9 @@ GitHub API → workflows/workflow.py
 raw_github_repos
     ↓ (store_in_staging)
 stg_repos_validated
-stg_render_enrichment
     ↓ (load_to_analytics_simple)
 dim_repositories
 fact_repo_snapshots
-fact_render_usage
     ↓ (views)
 analytics_trending_repos_current
 analytics_render_showcase

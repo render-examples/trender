@@ -28,7 +28,7 @@ WHERE dr.is_current = TRUE
 ORDER BY fs.momentum_score DESC;
 
 -- View: analytics_render_showcase
--- Purpose: Render ecosystem showcase with enrichment data
+-- Purpose: Render ecosystem showcase
 CREATE OR REPLACE VIEW analytics_render_showcase AS
 SELECT
   dr.repo_full_name,
@@ -41,15 +41,9 @@ SELECT
   fs.momentum_score,
   fs.star_velocity,
   fs.activity_score,
-  sre.render_services,
-  sre.service_count,
-  sre.render_complexity_score,
-  sre.has_blueprint_button,
-  sre.deploy_button_url,
   fs.snapshot_date
 FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
-LEFT JOIN stg_render_enrichment sre ON dr.repo_full_name = sre.repo_full_name
 WHERE dr.is_current = TRUE
   AND dr.language = 'render'
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)
@@ -81,22 +75,6 @@ WHERE dr.is_current = TRUE
   AND dr.repo_full_name !~ '^vercel'
 ORDER BY dl.language_name, fs.rank_in_language;
 
--- View: analytics_render_services_adoption
--- Purpose: Render service type adoption statistics
-CREATE OR REPLACE VIEW analytics_render_services_adoption AS
-SELECT
-  drs.service_type,
-  drs.service_description,
-  COUNT(DISTINCT fru.repo_key) as repos_using_service,
-  SUM(fru.service_count) as total_service_instances,
-  AVG(fru.complexity_score) as avg_complexity_score,
-  COUNT(CASE WHEN fru.has_blueprint THEN 1 END) as blueprints_with_service
-FROM dim_render_services drs
-LEFT JOIN fact_render_usage fru ON drs.service_key = fru.service_key
-WHERE fru.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_render_usage)
-   OR fru.snapshot_date IS NULL
-GROUP BY drs.service_key, drs.service_type, drs.service_description
-ORDER BY repos_using_service DESC;
 
 -- View: analytics_language_trends
 -- Purpose: Language-level aggregated statistics

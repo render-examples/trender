@@ -3,15 +3,12 @@ Language-specific and Render repository fetching tasks.
 """
 
 import os
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
-import asyncpg
+from typing import Dict
 
 from app import app
-from connections import init_connections, cleanup_connections
-from github_api import GitHubAPIClient
+from connections import cleanup_connections
 from utils import init_connections_with_error_handling, fetch_readmes_parallel
 from etl import store_raw_repos
 from tasks.batch_analysis import analyze_repo_batch

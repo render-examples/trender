@@ -94,22 +94,3 @@ CREATE INDEX IF NOT EXISTS idx_fact_snapshots_date ON fact_repo_snapshots(snapsh
 CREATE INDEX IF NOT EXISTS idx_fact_snapshots_momentum ON fact_repo_snapshots(momentum_score DESC);
 CREATE INDEX IF NOT EXISTS idx_fact_snapshots_language ON fact_repo_snapshots(language_key, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_fact_snapshots_repo ON fact_repo_snapshots(repo_key, snapshot_date DESC);
-
--- Fact: fact_render_usage
--- Purpose: Render service usage facts
-CREATE TABLE IF NOT EXISTS fact_render_usage (
-  usage_id SERIAL PRIMARY KEY,
-  repo_key INTEGER NOT NULL REFERENCES dim_repositories(repo_key) ON DELETE CASCADE,
-  service_key INTEGER NOT NULL REFERENCES dim_render_services(service_key),
-  snapshot_date DATE NOT NULL,
-  service_count INTEGER DEFAULT 1,
-  complexity_score INTEGER,
-  has_blueprint BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(repo_key, service_key, snapshot_date)
-);
-
--- Indexes for fact_render_usage
-CREATE INDEX IF NOT EXISTS idx_fact_render_repo ON fact_render_usage(repo_key, snapshot_date);
-CREATE INDEX IF NOT EXISTS idx_fact_render_service ON fact_render_usage(service_key);
-CREATE INDEX IF NOT EXISTS idx_fact_render_date ON fact_render_usage(snapshot_date DESC);

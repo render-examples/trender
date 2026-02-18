@@ -45,15 +45,9 @@ SELECT
   fs.momentum_score,
   fs.star_velocity,
   fs.activity_score,
-  sre.render_services,
-  sre.service_count,
-  sre.render_complexity_score,
-  sre.has_blueprint_button,
-  sre.deploy_button_url,
   fs.snapshot_date
 FROM dim_repositories dr
 JOIN fact_repo_snapshots fs ON dr.repo_key = fs.repo_key
-LEFT JOIN stg_render_enrichment sre ON dr.repo_full_name = sre.repo_full_name
 WHERE dr.is_current = TRUE
   AND dr.language = 'render'
   AND fs.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_repo_snapshots)

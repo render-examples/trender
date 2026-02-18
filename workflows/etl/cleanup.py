@@ -72,11 +72,8 @@ async def cleanup_old_data(db_pool: asyncpg.Pool) -> Dict[str, int]:
             # Query row counts after cleanup
             tables = [
                 'raw_github_repos',
-                'raw_repo_metrics',
-                'stg_render_enrichment',
                 'stg_repos_validated',
-                'fact_repo_snapshots',
-                'fact_render_usage'
+                'fact_repo_snapshots'
             ]
 
             for table in tables:

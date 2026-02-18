@@ -172,7 +172,7 @@ RENDER_WORKFLOW_SLUG=trender-wf
 **Render detection:**
 - Code search for `render.yaml` in repository root
 - Repositories assigned `language='render'` for clean identification
-- Service complexity scoring based on service count and types
+- Enrichment table tracks processing status (no classification logic)
 
 ## 🗄️ Data retention
 

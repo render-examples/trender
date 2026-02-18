@@ -24,21 +24,9 @@ BEGIN;
 DELETE FROM raw_github_repos
 WHERE fetch_timestamp < NOW() - INTERVAL '7 days';
 
--- Delete raw metrics data older than 7 days
--- Uses indexed fetch_timestamp for efficient deletion
-
-DELETE FROM raw_repo_metrics
-WHERE fetch_timestamp < NOW() - INTERVAL '7 days';
-
 -- ====================================
 -- STAGING LAYER CLEANUP (7-day retention)
 -- ====================================
--- Delete staging enrichment data older than 7 days
--- Cascades to stg_render_enrichment due to foreign key
-
-DELETE FROM stg_render_enrichment
-WHERE loaded_at < NOW() - INTERVAL '7 days';
-
 -- Delete staging validated repos older than 7 days
 -- This maintains a 7-day buffer for debugging ETL issues
 
@@ -48,12 +36,6 @@ WHERE loaded_at < NOW() - INTERVAL '7 days';
 -- ====================================
 -- ANALYTICS LAYER CLEANUP (30-day retention)
 -- ====================================
--- Delete render usage facts older than 30 days
--- Uses indexed snapshot_date for efficient deletion
-
-DELETE FROM fact_render_usage
-WHERE snapshot_date < CURRENT_DATE - INTERVAL '30 days';
-
 -- Delete repo snapshot facts older than 30 days
 -- Uses indexed snapshot_date for efficient deletion
 
@@ -89,40 +71,19 @@ SELECT
     COALESCE(MAX(fetch_timestamp), NOW()) as newest_record
 FROM raw_github_repos
 UNION ALL
-SELECT 
-    'raw_repo_metrics',
-    COUNT(*),
-    COALESCE(MIN(fetch_timestamp), NOW()),
-    COALESCE(MAX(fetch_timestamp), NOW())
-FROM raw_repo_metrics
-UNION ALL
-SELECT 
+SELECT
     'stg_repos_validated',
     COUNT(*),
     COALESCE(MIN(loaded_at), NOW()),
     COALESCE(MAX(loaded_at), NOW())
 FROM stg_repos_validated
 UNION ALL
-SELECT 
-    'stg_render_enrichment',
-    COUNT(*),
-    COALESCE(MIN(loaded_at), NOW()),
-    COALESCE(MAX(loaded_at), NOW())
-FROM stg_render_enrichment
-UNION ALL
-SELECT 
+SELECT
     'fact_repo_snapshots',
     COUNT(*),
     COALESCE(MIN(snapshot_date)::timestamptz, NOW()),
     COALESCE(MAX(snapshot_date)::timestamptz, NOW())
 FROM fact_repo_snapshots
-UNION ALL
-SELECT 
-    'fact_render_usage',
-    COUNT(*),
-    COALESCE(MIN(snapshot_date)::timestamptz, NOW()),
-    COALESCE(MAX(snapshot_date)::timestamptz, NOW())
-FROM fact_render_usage
 UNION ALL
 SELECT 
     'dim_repositories (current)',

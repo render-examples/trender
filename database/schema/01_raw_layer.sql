@@ -25,29 +25,3 @@ END $$;
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_raw_repos_fetch ON raw_github_repos(fetch_timestamp);
 CREATE INDEX IF NOT EXISTS idx_raw_repos_language ON raw_github_repos(source_language);
-
--- Table: raw_repo_metrics
--- Purpose: Store detailed GitHub metrics (commits, issues, contributors)
-CREATE TABLE IF NOT EXISTS raw_repo_metrics (
-  id SERIAL PRIMARY KEY,
-  repo_full_name VARCHAR(255) NOT NULL,
-  metric_type VARCHAR(50) NOT NULL, -- 'commits', 'issues', 'contributors'
-  metric_data JSONB NOT NULL,
-  fetch_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT valid_metric_type CHECK (metric_type IN ('commits', 'issues', 'contributors'))
-);
-
--- Unique constraint to prevent duplicates - one row per repo per metric type (latest data)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'raw_repo_metrics_unique'
-  ) THEN
-    ALTER TABLE raw_repo_metrics ADD CONSTRAINT raw_repo_metrics_unique UNIQUE (repo_full_name, metric_type);
-  END IF;
-END $$;
-
--- Indexes for querying metrics
-CREATE INDEX IF NOT EXISTS idx_raw_metrics_repo ON raw_repo_metrics(repo_full_name);
-CREATE INDEX IF NOT EXISTS idx_raw_metrics_type ON raw_repo_metrics(metric_type);
-CREATE INDEX IF NOT EXISTS idx_raw_metrics_fetch ON raw_repo_metrics(fetch_timestamp);

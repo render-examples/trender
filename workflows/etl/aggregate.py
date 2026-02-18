@@ -58,14 +58,8 @@ async def aggregate_results(
                     srv.created_at,
                     srv.updated_at,
                     srv.readme_content,
-                    sre.render_category,
-                    sre.render_services,
-                    sre.render_complexity_score,
-                    sre.has_blueprint_button,
-                    sre.service_count,
                     ROW_NUMBER() OVER (PARTITION BY srv.language ORDER BY srv.stars DESC) as lang_rank
                 FROM stg_repos_validated srv
-                LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
             )
             SELECT
                 repo_full_name,
@@ -75,12 +69,7 @@ async def aggregate_results(
                 stars,
                 created_at,
                 updated_at,
-                readme_content,
-                render_category,
-                render_services,
-                render_complexity_score,
-                has_blueprint_button,
-                service_count
+                readme_content
             FROM ranked_repos
             WHERE lang_rank <= 50
             ORDER BY stars DESC
@@ -96,14 +85,8 @@ async def aggregate_results(
                 srv.stars,
                 srv.created_at,
                 srv.updated_at,
-                srv.readme_content,
-                sre.render_category,
-                sre.render_services,
-                sre.render_complexity_score,
-                sre.has_blueprint_button,
-                sre.service_count
+                srv.readme_content
             FROM stg_repos_validated srv
-            LEFT JOIN stg_render_enrichment sre ON srv.repo_full_name = sre.repo_full_name
             WHERE srv.language = 'render'
             ORDER BY srv.stars DESC
         """)
