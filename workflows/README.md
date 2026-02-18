@@ -307,7 +307,7 @@ The script will:
 ## Dependencies
 
 See `requirements.txt`:
-- `render-sdk`: Workflows SDK with @task decorators
+- `render-sdk`: Workflows SDK with @app.task decorators
 - `asyncpg`: Async PostgreSQL driver
 - `aiohttp`: Async HTTP client
 - `python-dotenv`: Environment variable management

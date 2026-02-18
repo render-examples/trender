@@ -114,7 +114,7 @@ async def main():
     print(f"[{datetime.now(timezone.utc).isoformat()}] Starting daily run")
 
     # Step 1: Refresh auth credentials (must succeed before workflow runs)
-    print("Step 1: Refreshing GitHub auth credentials...")
+    print("Refreshing GitHub auth credentials...")
     auth_ok = await refresh_github_auth()
     if not auth_ok:
         print("✗ Auth refresh failed - aborting workflow trigger")
@@ -122,7 +122,7 @@ async def main():
     print("✓ Auth credentials refreshed")
 
     # Step 2: Trigger the workflow
-    print("Step 2: Triggering analysis workflow...")
+    print("Triggering analysis workflow...")
     result = await trigger_workflow()
     if result is None:
         print("✗ Workflow trigger failed")

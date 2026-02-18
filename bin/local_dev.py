@@ -63,11 +63,6 @@ def print_message(message: str, msg_type: str = 'info', prefix: str = '') -> Non
     print(f"{color}{full_message}{Colors.ENDC}", file=output)
 
 
-def print_header(message: str):
-    """Print a colored header message"""
-    print_message(f"\n{'='*80}\n{message}\n{'='*80}\n", 'header')
-
-
 def print_success(message: str):
     """Print a success message"""
     print_message(f"✓ {message}", 'success')
@@ -109,7 +104,7 @@ def _is_placeholder_value(var_name: str, value: str) -> bool:
 
 def validate_environment():
     """Validate required environment variables"""
-    print_header("Validating Environment")
+    print_info("Validating environment...")
 
     required_vars = {
         'DATABASE_URL': 'PostgreSQL connection string',
@@ -124,35 +119,15 @@ def validate_environment():
 
     for var, description in required_vars.items():
         value = os.getenv(var)
-
         if _is_placeholder_value(var, value):
-            print_error(f"{var} not configured ({description})")
+            print_error(f"{var} not configured")
             missing_vars.append(var)
-        else:
-            display_value = value[:10] + '...' if len(value) > 10 else value
-            print_success(f"{var} = {display_value}")
-    
-    # Check optional local dev settings
-    use_local_dev = os.getenv('RENDER_USE_LOCAL_DEV', 'false').lower() == 'true'
-    local_dev_url = os.getenv('RENDER_LOCAL_DEV_URL', 'http://localhost:8120')
-    
-    print_info(f"RENDER_USE_LOCAL_DEV = {use_local_dev}")
-    print_info(f"RENDER_LOCAL_DEV_URL = {local_dev_url}")
-    
-    # Dev mode settings
-    dev_mode = os.getenv('DEV_MODE', 'false').lower() == 'true'
-    dev_repo_limit = os.getenv('DEV_REPO_LIMIT', '50')
-    
-    print_info(f"DEV_MODE = {dev_mode}")
-    print_info(f"DEV_REPO_LIMIT = {dev_repo_limit}")
-    
+
     if missing_vars:
-        print_error(f"\nMissing required environment variables: {', '.join(missing_vars)}")
-        print_info("Please update your .env file with valid values.")
-        print_info(f"See {ENV_PATH.name} for configuration details.")
+        print_error(f"Missing: {', '.join(missing_vars)}")
         return False
 
-    print_success("\nAll required environment variables are configured!")
+    print_success("Environment validated")
     return True
 
 
@@ -161,35 +136,34 @@ def validate_environment():
 def wait_for_server(url: str, timeout: int = 3) -> bool:
     """
     Wait for the local task server to be ready
-    
+
     The Render EA tasks dev server doesn't expose a health endpoint,
     so we just give it a brief grace period to initialize.
-    
+
     Args:
         url: Server URL (for display purposes)
         timeout: Seconds to wait before continuing
-    
+
     Returns:
         Always returns True after timeout
     """
-    print_info(f"Giving task server {timeout}s to initialize...")
+    print_info(f"Waiting {timeout}s for server initialization...")
     time.sleep(timeout)
-    print_success("Task server should be ready")
     return True
 
 
 def start_task_server(port: int = 8120) -> subprocess.Popen:
     """
     Start the local task server in a subprocess
-    
+
     Args:
         port: Port number for the task server
-    
+
     Returns:
         Subprocess handle
     """
-    print_header("Starting Local Task Server")
-    
+    print_info(f"Starting task server on port {port}...")
+
     # Build command
     cmd = [
         'render', 'ea', 'tasks', 'dev',
@@ -197,14 +171,10 @@ def start_task_server(port: int = 8120) -> subprocess.Popen:
         '--',
         'python', 'workflows/workflow.py'
     ]
-    
-    print_info(f"Command: {' '.join(cmd)}")
-    print_info(f"Working directory: {PROJECT_ROOT}")
-    print_info("Press Ctrl+C to stop both server and trigger processes\n")
-    
+
     # Set up environment for subprocess
     env = os.environ.copy()
-    
+
     # Start subprocess
     process = subprocess.Popen(
         cmd,
@@ -216,27 +186,25 @@ def start_task_server(port: int = 8120) -> subprocess.Popen:
         bufsize=1,  # Line buffered
         universal_newlines=True
     )
-    
-    print_success(f"Task server started (PID: {process.pid})")
+
+    print_success(f"Server started (PID: {process.pid})")
     return process
 
 
 def trigger_workflow() -> subprocess.Popen:
     """
     Trigger the workflow against the local task server
-    
+
     Returns:
         Subprocess handle
     """
-    print_header("Triggering Workflow")
-    
+    print_info("Kicking off local run...")
+
     cmd = ['python', 'trigger/trigger.py']
-    
-    print_info(f"Command: {' '.join(cmd)}")
-    
+
     # Set up environment for subprocess
     env = os.environ.copy()
-    
+
     # Start subprocess
     process = subprocess.Popen(
         cmd,
@@ -248,8 +216,8 @@ def trigger_workflow() -> subprocess.Popen:
         bufsize=1,
         universal_newlines=True
     )
-    
-    print_success(f"Trigger process started (PID: {process.pid})")
+
+    print_success(f"Local run started (PID: {process.pid})")
     return process
 
 
@@ -390,19 +358,17 @@ def stream_process_output(process: subprocess.Popen, prefix: str):
 
 def cleanup_processes(*processes: subprocess.Popen):
     """Clean up subprocess handles"""
-    print_info("\nCleaning up processes...")
-    
+    print_info("Cleaning up...")
+
     for process in processes:
         if process and process.poll() is None:
-            print_info(f"Terminating process {process.pid}...")
             try:
                 process.terminate()
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                print_warning(f"Process {process.pid} didn't terminate, killing...")
                 process.kill()
             except Exception as e:
-                print_error(f"Error cleaning up process {process.pid}: {e}")
+                print_error(f"Cleanup error: {e}")
 
 
 def main():
@@ -441,8 +407,7 @@ def main():
     # Override RENDER_LOCAL_DEV_URL if custom port
     if args.port != 8120:
         os.environ['RENDER_LOCAL_DEV_URL'] = f'http://localhost:{args.port}'
-        print_info(f"Using custom port: {args.port}")
-    
+
     # Set RENDER_USE_LOCAL_DEV to true
     os.environ['RENDER_USE_LOCAL_DEV'] = 'true'
     
@@ -461,20 +426,18 @@ def main():
         
         if args.server_only:
             # Server-only mode: just stream server logs
-            print_info("Running in server-only mode. Press Ctrl+C to stop.")
+            print_info("Server-only mode (Ctrl+C to stop)")
             stream_process_output(server_process, "[SERVER]")
         elif args.trigger_only:
             # Trigger-only mode
             trigger_process = trigger_workflow()
             stream_process_output(trigger_process, "[TRIGGER]")
-
-            # Wait for trigger to complete
             trigger_process.wait()
 
             if trigger_process.returncode == 0:
-                print_success("\nWorkflow triggered successfully!")
+                print_success("Workflow triggered")
             else:
-                print_error(f"\nTrigger process exited with code {trigger_process.returncode}")
+                print_error(f"Trigger failed (exit code {trigger_process.returncode})")
         else:
             # Full mode: run both server and trigger
             trigger_process = trigger_workflow()
@@ -484,25 +447,22 @@ def main():
             trigger_process.wait()
 
             if trigger_process.returncode == 0:
-                print_success("\nWorkflow triggered! Now streaming task server logs...")
-                print_info("Press Ctrl+C to stop the server\n")
-
-                # Stream server logs
+                print_success("Workflow triggered (Ctrl+C to stop server)\n")
                 stream_process_output(server_process, "[SERVER]")
             else:
-                print_error(f"\nTrigger failed with code {trigger_process.returncode}")
+                print_error(f"Trigger failed (exit code {trigger_process.returncode})")
     
     except KeyboardInterrupt:
-        print_info("\n\nReceived Ctrl+C, shutting down...")
-    
+        print_info("\nShutting down...")
+
     except Exception as e:
-        print_error(f"\nError: {e}")
+        print_error(f"Error: {e}")
         import traceback
         traceback.print_exc()
-    
+
     finally:
         cleanup_processes(server_process, trigger_process)
-        print_success("\nLocal development session ended.")
+        print_success("Session ended")
 
 
 if __name__ == "__main__":

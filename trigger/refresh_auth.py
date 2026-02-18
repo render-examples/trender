@@ -158,14 +158,10 @@ async def refresh_github_auth() -> bool:
             token_expires_at, refresh_token_expires_at
         )
 
-        token_prefix = new_access_token[:8] if len(new_access_token) >= 8 else '***'
         refresh_changed = new_refresh_token != refresh_token
-        logger.info(
-            f"[AUTH] Token refreshed successfully. "
-            f"New access token: {token_prefix}... expires at {token_expires_at.isoformat()}"
-        )
+        logger.info(f"[AUTH] Token refreshed successfully (expires: {token_expires_at.isoformat()})")
         if refresh_changed:
-            logger.info("[AUTH] GitHub issued a new refresh token (previous token is now invalid)")
+            logger.info("[AUTH] New refresh token issued")
 
         return True
 

@@ -162,7 +162,8 @@ class GitHubAPIClient:
 
     async def search_repositories(self, language: str, sort: str = 'stars',
                                  updated_since: datetime = None,
-                                 created_since: datetime = None) -> List[Dict]:
+                                 created_since: datetime = None,
+                                 per_page: int = 25) -> List[Dict]:
         """
         Search repositories by language.
 
@@ -182,7 +183,7 @@ class GitHubAPIClient:
         if created_since:
             query += f" created:>={created_since.strftime('%Y-%m-%d')}"
 
-        url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page=50"
+        url = f"{self.base_url}/search/repositories?q={query}&sort={sort}&per_page={per_page}"
         result = await self._api_call(url)
         
         if not result:

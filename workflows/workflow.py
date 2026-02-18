@@ -37,7 +37,7 @@ TARGET_LANGUAGES = ['Python', 'TypeScript', 'Go']
 
 if __name__ == "__main__":
     # Start the Render Workflows task server
-    # This registers all @task decorated functions and begins listening for task execution requests
+    # This registers all @app.task decorated functions and begins listening for task execution requests
     logger.info("Starting Render Workflows task server...")
     logger.info(f"Registered tasks: main_analysis_task, fetch_language_repos, fetch_render_repos, analyze_repo_batch")
     logger.info(f"DEV_MODE: {DEV_MODE}, Target languages: {TARGET_LANGUAGES}")
