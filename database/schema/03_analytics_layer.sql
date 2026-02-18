@@ -49,25 +49,6 @@ INSERT INTO dim_languages (language_name, language_category, ecosystem_size) VAL
   ('render', 'platform', 'medium')
 ON CONFLICT (language_name) DO NOTHING;
 
--- Dimension: dim_render_services
--- Purpose: Render service types dimension
-CREATE TABLE IF NOT EXISTS dim_render_services (
-  service_key SERIAL PRIMARY KEY,
-  service_type VARCHAR(50) UNIQUE NOT NULL, -- 'web', 'worker', 'cron', 'private', etc.
-  service_description TEXT
-);
-
--- Seed data for dim_render_services
-INSERT INTO dim_render_services (service_type, service_description) VALUES
-  ('web', 'Web Service - HTTP servers, APIs, websites'),
-  ('worker', 'Background Worker - Async task processing'),
-  ('cron', 'Cron Job - Scheduled tasks'),
-  ('private', 'Private Service - Internal services'),
-  ('static', 'Static Site - Pre-built sites'),
-  ('postgres', 'PostgreSQL Database'),
-  ('redis', 'Redis Database')
-ON CONFLICT (service_type) DO NOTHING;
-
 -- =======================
 -- FACT TABLES
 -- =======================

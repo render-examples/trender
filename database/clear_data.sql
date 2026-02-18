@@ -26,7 +26,6 @@ TRUNCATE TABLE fact_repo_snapshots CASCADE;
 -- =======================
 -- Clear dimension tables (will cascade to any remaining facts)
 
-TRUNCATE TABLE dim_render_services RESTART IDENTITY CASCADE;
 TRUNCATE TABLE dim_languages RESTART IDENTITY CASCADE;
 TRUNCATE TABLE dim_repositories RESTART IDENTITY CASCADE;
 
@@ -49,21 +48,12 @@ TRUNCATE TABLE raw_github_repos RESTART IDENTITY CASCADE;
 -- =======================
 -- Re-insert seed data for dimension tables that need it
 
--- Re-seed dim_languages with the 3 target languages
+-- Re-seed dim_languages with all 4 tracked languages
 INSERT INTO dim_languages (language_name, language_category, ecosystem_size) VALUES
   ('Python', 'general', 'large'),
   ('TypeScript', 'web', 'large'),
-  ('Go', 'systems', 'large');
-
--- Re-seed dim_render_services with Render service types
-INSERT INTO dim_render_services (service_type, service_description) VALUES
-  ('web', 'Web Service - HTTP servers, APIs, websites'),
-  ('worker', 'Background Worker - Async task processing'),
-  ('cron', 'Cron Job - Scheduled tasks'),
-  ('private', 'Private Service - Internal services'),
-  ('static', 'Static Site - Pre-built sites'),
-  ('postgres', 'PostgreSQL Database'),
-  ('redis', 'Redis Database');
+  ('Go', 'systems', 'large'),
+  ('render', 'platform', 'medium');
 
 COMMIT;
 
@@ -79,8 +69,6 @@ UNION ALL
 SELECT 'dim_repositories', COUNT(*) FROM dim_repositories
 UNION ALL
 SELECT 'dim_languages', COUNT(*) FROM dim_languages
-UNION ALL
-SELECT 'dim_render_services', COUNT(*) FROM dim_render_services
 UNION ALL
 SELECT 'fact_repo_snapshots', COUNT(*) FROM fact_repo_snapshots
 ORDER BY table_name;
