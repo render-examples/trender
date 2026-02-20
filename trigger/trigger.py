@@ -98,13 +98,16 @@ async def main():
     """Refresh auth credentials then trigger the workflow."""
     print(f"[{datetime.now(timezone.utc).isoformat()}] Starting daily run")
 
-    # Step 1: Refresh auth credentials (must succeed before workflow runs)
-    print("Refreshing GitHub auth credentials...")
-    auth_ok = await refresh_github_auth()
-    if not auth_ok:
-        print("✗ Auth refresh failed - aborting workflow trigger")
-        sys.exit(1)
-    print("✓ Auth credentials refreshed")
+    # Step 1: Refresh auth credentials (OAuth only — skip if using a PAT)
+    if os.getenv('GITHUB_PAT'):
+        print("✓ Using GITHUB_PAT — skipping auth refresh")
+    else:
+        print("Refreshing GitHub auth credentials...")
+        auth_ok = await refresh_github_auth()
+        if not auth_ok:
+            print("✗ Auth refresh failed - aborting workflow trigger")
+            sys.exit(1)
+        print("✓ Auth credentials refreshed")
 
     # Step 2: Trigger the workflow
     print("Triggering analysis workflow...")

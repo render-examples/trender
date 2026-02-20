@@ -84,3 +84,4 @@ def calculate_momentum_score(
     momentum_score = (recency_score * recency_weight) + (normalized_stars * stars_weight)
 
     return momentum_score
+

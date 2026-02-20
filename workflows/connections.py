@@ -71,8 +71,9 @@ async def init_connections():
     """
     Initialize shared GitHub API client and database connection pool.
 
-    Credentials are loaded exclusively from the database. The daily token
-    refresh in trigger/refresh_auth.py must have run before this is called.
+    When GITHUB_PAT is set, uses it directly and bypasses OAuth credential
+    loading from the database. Otherwise, loads OAuth credentials from the DB
+    (requires the daily token refresh in trigger/refresh_auth.py to have run).
 
     Returns:
         Tuple of (GitHubAPIClient, asyncpg.Pool)
@@ -87,9 +88,13 @@ async def init_connections():
 
     db_pool = await _init_database_pool(database_url)
 
-    github_access_token, oauth_manager = await _init_oauth_manager(db_pool)
-
-    github_api = await _init_github_client(github_access_token)
+    github_pat = os.getenv('GITHUB_PAT')
+    if github_pat:
+        logger.info("✅ Using GITHUB_PAT for GitHub authentication")
+        github_api = await _init_github_client(github_pat)
+    else:
+        github_access_token, _ = await _init_oauth_manager(db_pool)
+        github_api = await _init_github_client(github_access_token)
 
     return github_api, db_pool
 

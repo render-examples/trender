@@ -111,11 +111,14 @@ def validate_environment():
 
     required_vars = {
         'DATABASE_URL': 'PostgreSQL connection string',
+        'RENDER_API_KEY': 'Render API key (for triggering)',
+        'RENDER_WORKFLOW_SLUG': 'Render workflow slug',
+    }
+
+    oauth_vars = {
         'GITHUB_CLIENT_ID': 'GitHub OAuth App client ID',
         'GITHUB_CLIENT_SECRET': 'GitHub OAuth App client secret',
         'GITHUB_TOKEN_ENCRYPTION_KEY': 'Token encryption key',
-        'RENDER_API_KEY': 'Render API key (for triggering)',
-        'RENDER_WORKFLOW_SLUG': 'Render workflow slug',
     }
 
     missing_vars = []
@@ -125,6 +128,17 @@ def validate_environment():
         if _is_placeholder_value(var, value):
             print_error(f"{var} not configured")
             missing_vars.append(var)
+
+    # Auth: require either GITHUB_PAT or all three OAuth vars
+    github_pat = os.getenv('GITHUB_PAT')
+    if github_pat:
+        print_info("GitHub auth: PAT mode (GITHUB_PAT set)")
+    else:
+        for var, description in oauth_vars.items():
+            value = os.getenv(var)
+            if _is_placeholder_value(var, value):
+                print_error(f"{var} not configured (set GITHUB_PAT or configure OAuth vars)")
+                missing_vars.append(var)
 
     if missing_vars:
         print_error(f"Missing: {', '.join(missing_vars)}")

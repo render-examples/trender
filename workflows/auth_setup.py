@@ -313,9 +313,6 @@ def main():
     """Main authentication setup flow."""
     print("\n→ GitHub Authentication Setup")
 
-    # Ensure encryption key exists
-    encryption_key = _ensure_encryption_key()
-
     print("\nChoose authentication method:")
     print("[1] Personal Access Token (PAT) - Recommended")
     print("[2] OAuth App - Advanced\n")
@@ -324,33 +321,30 @@ def main():
 
     match choice:
         case '1':
-            method = 'PAT'
             result = setup_pat()
-            token = result
-            refresh_token = None
+            if not result:
+                print("✗ Setup failed")
+                sys.exit(1)
+            print(f"\n✅ PAT Setup Complete")
+            print(f"\nAdd to Render environment (trender-wf and trender-cron):")
+            print(f"  GITHUB_PAT={result}")
+            print(f"\n⚠ Never commit this token to git. Revoke at: https://github.com/settings/tokens")
         case '2':
-            method = 'OAuth'
+            encryption_key = _ensure_encryption_key()
             result = setup_oauth()
-            token = result.get('access_token') if result else None
-            refresh_token = result.get('refresh_token') if result else None
+            if not result or not result.get('access_token'):
+                print("✗ Setup failed")
+                sys.exit(1)
+            print(f"\n✅ OAuth Setup Complete")
+            print(f"\nAdd to Render environment (trender-wf and trender-cron):")
+            print(f"  GITHUB_CLIENT_ID={os.getenv('GITHUB_CLIENT_ID')}")
+            print(f"  GITHUB_CLIENT_SECRET={os.getenv('GITHUB_CLIENT_SECRET')}")
+            print(f"  GITHUB_TOKEN_ENCRYPTION_KEY={encryption_key}")
+            print(f"\n⚠ Never commit these to git. Revoke at: https://github.com/settings/applications")
         case _:
             print("✗ Invalid choice")
             sys.exit(1)
 
-    if not token:
-        print("✗ Setup failed")
-        sys.exit(1)
-
-    # Success!
-    print(f"\n✅ {method} Setup Complete")
-    print(f"\nAccess Token: {token[:20]}...")
-
-    if refresh_token:
-        print(f"Refresh Token: {refresh_token[:20]}...")
-        print("⚠ OAuth tokens expire after 8 hours (auto-refresh enabled)")
-
-    _print_env_instructions(token, refresh_token, method)
-    _print_security_reminder(method)
     print()
 
 

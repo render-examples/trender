@@ -159,3 +159,4 @@ async def fetch_render_repos() -> Dict:
 
     finally:
         await cleanup_connections(github_api, db_pool)
+

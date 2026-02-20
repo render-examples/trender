@@ -16,17 +16,23 @@ Lightweight Python script that triggers the `main_analysis_task` workflow using 
 ## How it works
 
 ```python
-# 1. Initialize Render client (uses RENDER_API_KEY from env)
+# 1. Auth check — skipped when GITHUB_PAT is set; runs refresh_auth.py for OAuth
+if GITHUB_PAT:
+    print("✓ Using GITHUB_PAT — skipping auth refresh")
+else:
+    await refresh_github_auth()
+
+# 2. Initialize Render client (uses RENDER_API_KEY from env)
 client = Client()
 
-# 2. Trigger workflow task
+# 3. Trigger workflow task
 task_identifier = f"{workflow_slug}/main_analysis_task"
 run = await client.workflows.run_task(
     task_identifier=task_identifier,
     input_data=[]  # No arguments needed
 )
 
-# 3. Return run metadata
+# 4. Return run metadata
 print(f"Task Run ID: {run.id}")
 print(f"Status: {run.status}")
 ```
@@ -35,8 +41,16 @@ print(f"Status: {run.status}")
 
 ```bash
 # Required
-RENDER_API_KEY=rnd_...         # From dashboard.render.com/u/settings#api-keys
+RENDER_API_KEY=rnd_...           # From dashboard.render.com/u/settings#api-keys
 RENDER_WORKFLOW_SLUG=trender-wf  # Your workflow slug
+
+# GitHub auth — set ONE of the following:
+GITHUB_PAT=ghp_...               # Option 1: PAT (skips Step 1 entirely)
+# -- OR --
+GITHUB_CLIENT_ID=...             # Option 2: OAuth App (all four required)
+GITHUB_CLIENT_SECRET=...
+GITHUB_TOKEN_ENCRYPTION_KEY=...
+DATABASE_URL=postgresql://...
 
 # Optional (for local dev)
 RENDER_USE_LOCAL_DEV=true
@@ -206,6 +220,7 @@ curl https://trender-dashboard.onrender.com/api/workflow-status
 | Script hangs | Check network connectivity to Render API |
 | "Task not found" | Ensure workflow is deployed with `main_analysis_task` |
 | "All connection attempts failed" | Check if `RENDER_LOCAL_DEV_URL` is set (should be commented out for production) |
+| Auth refresh fails but you have a PAT | Set `GITHUB_PAT` in env — Step 1 will be skipped automatically |
 
 ## Dependencies
 
