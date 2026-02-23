@@ -9,7 +9,7 @@ export default function TypingTagline() {
       <div className="typing-tagline-container">
         <p className="typing-tagline">
           <span className="typing-text">
-            Discover the most-loved projects in your favorite languages. Powered by{' '}
+            Discover the most-loved community projects. Powered by{' '}
             <a 
               href="https://render.com/docs/workflows" 
               target="_blank" 
