@@ -58,7 +58,7 @@ export default function HomeClient({
   return (
     <div className="space-y-8">
       <ScrollableRow 
-        title="RENDER" 
+        title="DEPLOYED ON RENDER" 
         repos={renderRepos} 
         icon="/images/render-logomark.png"
         selectedRepo={selectedSection === 'render' ? selectedRepo : null}
