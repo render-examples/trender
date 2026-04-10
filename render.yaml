@@ -15,34 +15,6 @@ services:
       - key: NODE_ENV
         value: production
 
-  # Workflow - Main Analytics Pipeline
-  - type: workflow
-    name: trender-wf
-    runtime: python
-    rootDir: workflows
-    buildCommand: pip install -r requirements.txt
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: trender-db
-          property: connectionString
-      # GitHub auth — set ONE of the following:
-      # Option 1: PAT
-      - key: GITHUB_PAT
-        sync: false
-      # Option 2: OAuth App (all three required together)
-      - key: GITHUB_CLIENT_ID
-        sync: false
-      - key: GITHUB_CLIENT_SECRET
-        sync: false
-      - key: GITHUB_TOKEN_ENCRYPTION_KEY
-        sync: false
-      # Development Settings
-      - key: DEV_MODE
-        value: false
-      - key: DEV_REPO_LIMIT
-        value: 5
-
   # Cron Job - Daily Auth Refresh + Analysis Trigger (6 AM PST / 14:00 UTC)
   # Runs refresh_auth.py first (OAuth only), then triggers the workflow.
   - type: cron
