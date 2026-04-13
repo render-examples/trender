@@ -1,3 +1,6 @@
+project:
+  name: Trender
+
 services:
   # Next.js Dashboard - Web Service
   - type: web
@@ -48,4 +51,4 @@ services:
 databases:
   - name: trender-db
     databaseName: trender
-    plan: basic_256mb
+    plan: basic-256mb
