@@ -50,10 +50,10 @@ async def trigger_workflow():
         else:
             print(f"Triggering task (PRODUCTION): {task_identifier}")
 
-        # Trigger the task (positional args to be compatible across SDK versions)
+        # Trigger the task
         started_run = await client.workflows.run_task(
-            task_identifier,
-            []  # main_analysis_task takes no arguments
+            task_identifier=task_identifier,
+            input_data=[]  # main_analysis_task takes no arguments
         )
 
         # Parse response (may be None or incomplete in local dev)
