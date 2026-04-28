@@ -52,7 +52,7 @@ async def trigger_workflow():
 
         # Trigger the task
         started_run = await client.workflows.run_task(
-            task_identifier=task_identifier,
+            task_slug=task_identifier,
             input_data=[]  # main_analysis_task takes no arguments
         )
 
