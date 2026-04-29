@@ -50,46 +50,22 @@ async def trigger_workflow():
         else:
             print(f"Triggering task (PRODUCTION): {task_identifier}")
 
-        # Trigger the task
-        started_run = await client.workflows.run_task(
+        # Fire-and-forget: start the task and exit immediately without waiting for completion
+        started_run = await client.workflows.start_task(
             task_slug=task_identifier,
             input_data=[]  # main_analysis_task takes no arguments
         )
 
-        # Parse response (may be None or incomplete in local dev)
-        if started_run and hasattr(started_run, 'id'):
-            print(f"✓ Workflow triggered successfully at {datetime.now(timezone.utc)}")
-            print(f"  Task Run ID: {started_run.id}")
-            print(f"  Initial Status: {started_run.status if hasattr(started_run, 'status') else 'N/A'}")
+        print(f"✓ Workflow triggered successfully at {datetime.now(timezone.utc)}")
+        print(f"  Task Run ID: {started_run.id}")
 
-            return {
-                'run_id': started_run.id,
-                'status': started_run.status if hasattr(started_run, 'status') else 'running',
-                'task_identifier': task_identifier
-            }
-        else:
-            # Local dev may return None - task was still triggered successfully
-            print(f"✓ Task triggered successfully (local dev mode)")
-            print(f"  Note: Response object not available in local dev")
-
-            return {
-                'run_id': 'local-dev',
-                'status': 'triggered',
-                'task_identifier': task_identifier
-            }
+        return {
+            'run_id': started_run.id,
+            'status': 'triggered',
+            'task_identifier': task_identifier
+        }
 
     except Exception as e:
-        error_str = str(e)
-        if 'NoneType' in error_str and 'iterable' in error_str:
-            # Known issue: SDK triggers task successfully but response parsing fails in local dev
-            print(f"✓ Task triggered successfully (local dev mode)")
-            print(f"  Note: Local dev response parsing skipped")
-            return {
-                'run_id': 'local-dev',
-                'status': 'triggered',
-                'task_identifier': task_identifier
-            }
-
         print(f"✗ Exception during workflow trigger: {str(e)}")
         return None
 
